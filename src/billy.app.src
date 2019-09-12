@@ -1,0 +1,103 @@
+{application, billy,
+  [{description, "Приложение для обработки платёжных транзакций различных мерчантов (продавцов)"},
+    {vsn, "1"},
+    {applications, [kernel, stdlib]},
+    {mod,{billy_app,[]}},
+	{env,
+		[
+      {listen_address, "0.0.0.0"},
+      {listen_port,    32123},
+
+      {cbserver_node, 'cbserver_billy@192.168.1.7'},
+      %% {cbserver_node, 'cbserver_billy@billy.bvvd.ru'},
+
+      %% ----------------------------------------------------
+      %% MYSQL ACCESS CONFIG
+
+      {mysql_host, "localhost"},
+      {mysql_port, 3306},
+      {mysql_username, "root"},
+      {mysql_password, "ufvfhec"},
+      {mysql_database, "billy"},
+
+
+      %% ----------------------------------------------------
+      %% MASSPAYMENTS CONFIG
+
+      {masspayments_config,
+        #{qiwi =>
+                  [
+                    #{group_id => 0, qiwi_api_personid => "79254914194", qiwi_oauth_token => "7cc0837572c2ff38437668abd854fb84"}
+                    %% #{group_id => 0, qiwi_api_personid => "79027365490", qiwi_oauth_token => "b09e1654eb63e123bbadbb24999ada1c"},
+                    %% #{group_id => 1, qiwi_api_personid => "79027365490", qiwi_oauth_token => "b09e1654eb63e123bbadbb24999ada1c"},
+                    %% #{group_id => 2, qiwi_api_personid => "79027365490", qiwi_oauth_token => "b09e1654eb63e123bbadbb24999ada1c"}
+                  ],
+          steam =>
+                  [
+                    #{group_id => 0, qiwi_api_personid => "79254914194", qiwi_oauth_token => "7cc0837572c2ff38437668abd854fb84"}
+                  ],
+          payeer =>
+                  [
+                    #{group_id => 0, payeer_account => "P75501258", payeer_api_user_id => "528880167", payeer_api_secret_key => "V8fkj76DFf32346"}
+                  ],
+          paykassa =>
+                  [
+                    #{group_id => 0, paykassa_api_id => "1879", paykassa_api_key => "Gbhf7QuZV4PM6mn", paykassa_shop_id => "3071", paykassa_shop_name => "gocs.pro"}
+                  ]
+        }
+      },
+
+      %% ----------------------------------------------------
+      %% PAYMENT SYSTEMS IPN CONFIG
+
+      %% Billy
+      {billy_merchant_id, "1"},
+      {billy_secret_key, "0ed78cf02c6ad0c1293b416e0967f9d7"},
+      {billy_public_key, "r8gxc62324"},
+
+      %% CloudPayments
+      {cloudpayments_public_id, "pk_9f9e69cbf45f19e45a51136b2c6dd"},
+      {cloudpayments_secret_key, "3dfed38d417d283807e2ec12c63df6e6"},
+
+      %% Connectum
+      {connectum_api_host, "https://api.connectum.eu"},
+      {connectum_certs_path, "connectum/live"},
+      {connectum_api_user, "betaluxtradeou"},
+      {connectum_api_password, "KsGGWwMBGvEpwVHesv4aNcm4"},
+
+      %% Cauri
+      {cauri_public_key, "ztAiYYc5wh49IwIxdGIY0oSKiMjDmr7V"},
+      {cauri_private_key, "t6tkHXriEA-coDK97DvHSLeCzkqhwo6u"},
+
+      %% Payeer
+      {payeer_merchant_id, "412058100"},
+      {payeer_secret_key, "Www83746,,"},
+
+      %% BitPay
+      {bitpay_nodejs_path, "../priv/bitpay_nodejs/"},
+
+      %% Qiwi
+      %% {qiwi_prv_id, "531637"},
+      %% {qiwi_api_id, "70592995"},
+      {qiwi_api_secret_key, "eyJ2ZXJzaW9uIjoiUDJQIiwiZGF0YSI6eyJwYXlpbl9tZXJjaGFudF9zaXRlX3VpZCI6IjVwZHF6Zy0wMCIsInVzZXJfaWQiOiI3OTAyNzM2NTQ5MCIsInNlY3JldCI6IjhiNTMzOTliNGVhNGY3MzhkYTgwOTY5NjdlYmUzZDI5ZTRlYjQ1NDg1ZGYzNjBmZDA5ZjdjNWY1ZjdlNWU0MjAifX0="},
+      {qiwi_api_public_key, "48e7qUxn9T7RyYE1MVZswX1FRSbE6iyCj2gCRwwF3Dnh5XrasNTx3BGPiMsyXQFNKQhvukniQG8RTVhYm3iP5oKx9d72vgFLHapcu82WCMtd4zcNtf9Cc6SkAtAufCoQSJkKV1oQmL3HXehF7xWnNyrjXZivhcBn7DfC9tcsSk63fLwbhttJ49u2gHtd2"},
+
+      %% G2A
+      {g2apay_merchant_email, "volochay2017@list.ru"},
+      {g2apay_secret, "r$xOYDTXa@syQn$3j4VxB4L28=_NifYNaIl%V2T@^9rNwnQTruE=yZ~@PtH@MoIw"},
+      {g2apay_api_key, "36bff4a0-a8b9-4758-befc-e321fcbb6aac"},
+
+      %% Robokassa PROD
+      {robokassa_pass1, "Rkl53BUmCFok78b4iSMa"},
+      {robokassa_pass2, "zWIEEV4DC0VJXT0N4H8e"},
+      {robokassa_merchant, "bvvd123555"},
+      %% Robokassa TEST
+      %% {robokassa_pass1, "ah1oCLppSHDjwbI95g49"},
+      %% {robokassa_pass2, "bQjBj5NU7OBa5hzRQ3C8"},
+      %% {robokassa_merchant, "bvvd123555"},
+
+      %% bPay
+      {bpay_merchantid, "bvvdRU"},
+      {bpay_signature, "kdnfjdsnfhegjhb43@"}
+		]}
+ ]}.
