@@ -1,0 +1,45 @@
+.container {
+  width: 100%;
+  max-width: 350px;
+  margin: 0 auto;
+  text-align: center;
+}
+form {
+  margin: 10px;
+}
+input {
+  width: 100%;
+  margin: 10px auto;
+  display: block;
+  border-radius: 5px;
+  border-style: solid;
+  border: 1px solid #999;
+  padding: 5px;
+}
+input.minified {
+  width: 100px;
+  text-align: center;
+  display: inline-block;
+}
+.bepay {
+  cursor: pointer;
+  display: block;
+  margin: 10px auto;
+  padding: 10px 0;
+  font-size: 20px;
+  width: 100%;
+  border-radius: 10px;
+  border-style: none;
+  background-color: #1cca1c;
+  color: #fff;  
+}
+.bepay:hover {
+  background-color: #089a08;
+}
+.bepay:disabled {
+  background-color: #ccc;
+}
+#errors span {
+  display: block;
+  color: red;
+}

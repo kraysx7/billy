@@ -1,0 +1,17 @@
+<html> 
+	<head>
+		<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.6.1/jquery.min.js"></script>
+		<script type="text/javascript">
+		  $(document).ready(function() {
+			window.document.forms[0].submit();
+		  });
+		</script>
+	</head> 
+	<body>
+		<form method="POST" action="https://www.bpay.md/user-api/payment1">
+			<input type="hidden" name="data" value="{{ data }}">
+			<input type="hidden" name="key" value="{{ key }}">
+			<input type="submit" value="Processing Payment..." >
+		</form>
+	</body>
+</html>

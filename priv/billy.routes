@@ -1,0 +1,69 @@
+%%=====================================
+%% BILLY routes file.
+%%=====================================
+
+%% ePHP controllers
+
+{"/payment/cloudpayments/checkout",              [{controller, "cloudpayments/checkout.php"}] }.
+{"/payment/cloudpayments/cardCharge",            [{controller, "cloudpayments/checkout_cardcharge.php"}] }.
+{"/payment/cloudpayments/post3ds",               [{controller, "cloudpayments/checkout_post3ds.php"}] }.
+
+{"/payment/connectum/checkout",                  [{controller, "connectum/checkout.php"}] }.
+{"/payment/connectum/create",                    [{controller, "connectum/create.php"}] }.
+{"/payment/connectum/authorize",                 [{controller, "connectum/authorize.php"}] }.
+{"/payment/connectum/finish",                    [{controller, "connectum/finish.php"}] }.
+
+{"/payment/cauri/checkout",                      [{controller, "cauri/checkout.php"}] }.
+{"/payment/cauri/callback",                      [{controller, "cauri/callback.php"}] }.
+
+{"/payment/payeer/checkout",                     [{controller, "payeer/checkout.php"}] }.
+{"/payment/payeer/notification",                 [{controller, "payeer/notification.php"}] }.
+{"/payment/payeer/success",                      [{controller, "payeer/success.php"}] }.
+{"/payment/payeer/fail",                         [{controller, "payeer/fail.php"}] }.
+
+{"/payment/paykassa/checkout",                   [{controller, "paykassa/checkout.php"}] }.
+
+%% {"/testphp",                                  [{controller, "test.php"}] }.
+%% {"/ephp/manager/api/reload_routes",           [{controller, "manager/api/reload_routes.php"}] }.
+%% {"/ephp/manager/api/get_transaction",         [{controller, "manager/api/get_transaction.php"}] }.
+%% {"/ephp/manager",                             [{controller, "manager/index.php"}] }.
+%% {"/ephp/manager/transactions",                [{controller, "manager/transactions/index.php"}] }.
+
+
+
+%% Erlang controllers
+
+{"/",                                            [{controller, billy_index_handler}, {opts, #{}}] }.
+
+{"/billy/static/[...]",                          [{controller, cowboy_static}, {opts, {priv_dir, billy, "../priv/static", [{mimetypes, cow_mimetypes, all}]} }] }.
+
+{"/api/create_payment",                          [{controller, billy_api_handler}, {opts, #{method => create_payment}}] }.
+{"/api/create_transaction",                      [{controller, billy_api_handler}, {opts, #{method => create_transaction}}] }.
+{"/api/process_transaction",                     [{controller, billy_api_handler}, {opts, #{method => process_transaction}}] }.
+{"/api/currency_rate",                           [{controller, billy_api_handler}, {opts, #{method => currency_rate}}] }.
+{"/api/masspayments/get_balance",                [{controller, billy_api_masspayments_handler}, {opts, #{method => get_balance}}] }.
+{"/api/masspayments/check_opportunity",          [{controller, billy_api_masspayments_handler}, {opts, #{method => check_opportunity}}] }.
+{"/api/masspayments/create_transaction",         [{controller, billy_api_masspayments_handler}, {opts, #{method => create_transaction}}] }.
+
+{"/payment/qiwi/notification_p2p",               [{controller, billy_qiwi_handler}, {opts, #{method => notification_p2p}}] }.
+{"/payment/qiwi/notification_b2b",               [{controller, billy_qiwi_handler}, {opts, #{method => notification_b2b}}] }.
+{"/payment/qiwi/success",                        [{controller, billy_qiwi_handler}, {opts, #{method => success}}] }.
+{"/payment/qiwi/fail",                           [{controller, billy_qiwi_handler}, {opts, #{method => fail}}] }.
+
+{"/payment/robokassa/notification",              [{controller, billy_robokassa_handler}, {opts, #{method => notification}}] }.
+{"/payment/robokassa/success",                   [{controller, billy_robokassa_handler}, {opts, #{method => success}}] }.
+{"/payment/robokassa/fail",                      [{controller, billy_robokassa_handler}, {opts, #{method => fail}}] }.
+
+{"/payment/g2a/redirector",                      [{controller, billy_g2a_handler}, {opts, #{method => redirector}}] }.
+{"/payment/g2a/notification",                    [{controller, billy_g2a_handler}, {opts, #{method => notification}}] }.
+{"/payment/g2a/success",                         [{controller, billy_g2a_handler}, {opts, #{method => success}}] }.
+{"/payment/g2a/fail",                            [{controller, billy_g2a_handler}, {opts, #{method => fail}}] }.
+
+{"/payment/bitpay/notification",                 [{controller, billy_bitpay_handler}, {opts, #{method => notification}}] }.
+
+{"/payment/bpay/redirector",                     [{controller, billy_bpay_handler}, {opts, #{method => redirector}}] }.
+{"/payment/bpay/notification",                   [{controller, billy_bpay_handler}, {opts, #{method => notification}}] }.
+{"/payment/bpay/success",                        [{controller, billy_bpay_handler}, {opts, #{method => success}}] }.
+{"/payment/bpay/fail",                           [{controller, billy_bpay_handler}, {opts, #{method => fail}}] }.
+
+{'_', [{controller, billy_notfound_handler}, {opts, #{}}] }.

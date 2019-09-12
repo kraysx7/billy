@@ -1,0 +1,1 @@
+<?php reload_routes() ?>
