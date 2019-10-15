@@ -54,10 +54,9 @@
 {"/payment/robokassa/success",                   [{controller, billy_robokassa_handler}, {opts, #{method => success}}] }.
 {"/payment/robokassa/fail",                      [{controller, billy_robokassa_handler}, {opts, #{method => fail}}] }.
 
-{"/payment/g2a/redirector",                      [{controller, billy_g2a_handler}, {opts, #{method => redirector}}] }.
 {"/payment/g2a/notification",                    [{controller, billy_g2a_handler}, {opts, #{method => notification}}] }.
-{"/payment/g2a/success",                         [{controller, billy_g2a_handler}, {opts, #{method => success}}] }.
-{"/payment/g2a/fail",                            [{controller, billy_g2a_handler}, {opts, #{method => fail}}] }.
+{"/payment/g2a/success",                         [{controller, "g2a/success.php"}] }.
+{"/payment/g2a/fail",                            [{controller, "g2a/fail.php"}] }.
 
 {"/payment/bitpay/notification",                 [{controller, billy_bitpay_handler}, {opts, #{method => notification}}] }.
 

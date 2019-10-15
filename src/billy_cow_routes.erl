@@ -4,7 +4,7 @@
 
 load_routes() ->
     %% Load  routes
-    RoutesFile = "../priv/billy.routes",
+    RoutesFile = "priv/billy.routes",
     case file:consult(RoutesFile) of
 	{ok, LoadedTerms} ->
 	    Routes = lists:foldl(fun

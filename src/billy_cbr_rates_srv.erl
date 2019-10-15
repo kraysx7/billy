@@ -69,7 +69,7 @@ handle_info(sync_centralbank, State) ->
     {{Y, M, D}, {_, _, _}} = calendar:local_time(),
     Query = io_lib:format("http://www.cbr.ru/scripts/XML_daily.asp?date_req=~2..0B/~2..0B/~p", [D, M, Y]),
 
-    io:format("DEBUG>>> billy_cbr_rates_srv:handle_info {sync_centralbank} Query: ~ts~n", [Query]),
+    %% io:format("DEBUG>>> billy_cbr_rates_srv:handle_info {sync_centralbank} Query: ~ts~n", [Query]),
     
     Headers = [],
     Body = <<>>,
@@ -95,9 +95,7 @@ handle_info(sync_centralbank, State) ->
 	    {Xml, _} = xmerl_scan:string(FinBodyUtf8),
 	    
 	    XmlRates = xmerl_xpath:string("/ValCurs/Valute", Xml),
-	    
-	    io:format("DEBUG>>> billy_cbr_rates_srv:sync_centralbank XmlRates len: ~p~n", [length(XmlRates)]),
-	    
+
 	    lists:foreach(fun(E) ->
 				  NumCode = xml_val(xmerl_xpath:string("NumCode", E)),
 				  CharCode = xml_val(xmerl_xpath:string("CharCode", E)),
@@ -117,22 +115,23 @@ handle_info(sync_centralbank, State) ->
 					    value=billy_commons:list_to_float(Value)
 					   },
 				  
-				  io:format("DEBUG>>> billy_cbr_rates_srv:sync_centralbank ~p ~ts=~p RUB ____ (~ts)~n", [Rate#rate.nominal, Rate#rate.currency_alpha, Rate#rate.value, Rate#rate.name]),
+				  %% io:format("DEBUG>>> billy_cbr_rates_srv:sync_centralbank ~p ~ts=~p RUB ____ (~ts)~n", [Rate#rate.nominal, Rate#rate.currency_alpha, Rate#rate.value, Rate#rate.name]),
 				  
 				  %% Записать в mnesia
 				  write_rate(Rate)
 			  end, XmlRates),
+	    
+	    %% io:format("DEBUG>>> billy_cbr_rates_srv:sync_centralbank loaded ~p rates!~n", [length(XmlRates)]),
 	    ok;
 	
 	%% Любой другой ответ
 	Resp ->
 	    
-	    error_logger:info_msg("DEBUG>>> billy_cbr_rates_srv:sync_centralbank HTTP ERROR RESPONSE: ~p~n", [self(), Resp]),
+	    error_logger:info_msg("DEBUG>>> billy_cbr_rates_srv:sync_centralbank HTTP ERROR RESPONSE: ~p~n", [Resp]),
 	    
 	    ok
     end,
-    
-    io:format("DEBUG>>> billy_cbr_rates_srv:sync_centralbank finished! get_rate: ~p~n", [billy_cbr_rate:get_rate(#{currency_alpha => <<"EUR">>})]),
+
     erlang:send_after(?SYNC_CENTRALBANK_TIMER, self(), sync_centralbank),
     {noreply, State};
 

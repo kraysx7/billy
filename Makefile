@@ -21,6 +21,8 @@ install:
 	rsync -rupE priv $(INSTALL_DIR)/$(APP_NAME)
 	rsync -rupE include $(INSTALL_DIR)/$(APP_NAME)
 
+	cp $(APP_NAME).config $(INSTALL_DIR)/$(APP_NAME).config
+
 
 install-dev:
 	echo -n ${INSTALL_DIR}

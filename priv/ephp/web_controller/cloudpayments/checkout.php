@@ -2,12 +2,23 @@
 <meta charset="utf-8">
 <?php
 
+  header("content-type", "text/html");
+
   /* TEST CARD NUMBER: 4925000000000087 */
 
-  if(count($_GET) == 0 || check_billy_signature((int)$_GET['tr_id'],$_GET['signature']) == false) {
+  $tr_id = (int)$_GET['tr_id'];
+
+  if(count($_GET) == 0 || check_billy_signature($tr_id, $_GET['signature']) == false) {
     echo "Ошибка подписи";
     exit;
   }
+
+  //Получаем транзакцию
+  $transaction = get_transaction($tr_id);
+
+  // Получаем настройки мерчанта для данной платёжной системы
+  $merchant_id = $transaction["merchant_id"];
+  $paysystem_config = get_paysystem_config($merchant_id, $transaction["params"]["system"]);
 
 ?>
 
@@ -33,11 +44,11 @@
 <script src="/billy/static/card.js"></script>
 <script>
   var card = new Card({
-    form: 'form', 
+    form: 'form',
     container: '.card-wrapper',
     formSelectors: {
-      numberInput: 'input[data-cp="cardNumber"]', 
-      expiryInput: 'input[data-cp="expDateMonth"], input[data-cp="expDateYear"]', 
+      numberInput: 'input[data-cp="cardNumber"]',
+      expiryInput: 'input[data-cp="expDateMonth"], input[data-cp="expDateYear"]',
       cvcInput: 'input[data-cp="cvv"]',
       nameInput: 'input[data-cp="name"]'
     },
@@ -69,15 +80,14 @@
             if(jsonData.Model.AcsUrl)
             {
               $.redirectPost(jsonData.Model.AcsUrl, {
-                MD: jsonData.Model.TransactionId, 
-                PaReq: jsonData.Model.PaReq, 
-                TermUrl: "https://somacase.com/payment/cloudpayments/post3ds"
-//                TermUrl: "http://orky.name/2can/post_helper.php"
+                MD: jsonData.Model.TransactionId,
+                PaReq: jsonData.Model.PaReq,
+                TermUrl: <?=$paysystem_config["term_url"]?>
               });
             } else if(jsonData.Model.StatusCode == 3) {
-              $.redirectPost("https://somacase.com/payment/cloudpayments/cardCharge", {"PaRes":"AQ=="});
+              $.redirectPost(<?=$paysystem_config["card_charge_url"]?>, {"PaRes":"AQ=="});
             } else if(jsonData.Model.StatusCode == 5) {
-              $.redirectPost("https://somacase.com/payment/cloudpayments/cardCharge", {"PaRes":"decline"});
+              $.redirectPost(<?=$paysystem_config["card_charge_url"]?>, {"PaRes":"decline"});
             }
           } catch (error) {
             console.log(error);
@@ -88,7 +98,7 @@
         $("#errors").html('');
         for (var msgName in result.messages) {
           $("#errors").append("<span>" + result.messages[msgName] + "</span>");
-        } 
+        }
       }
   });
 

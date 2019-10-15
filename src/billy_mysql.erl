@@ -7,25 +7,6 @@
 
 init_stmt() ->
 
-    %% merchant 
-
-    emysql:prepare(get_merchant_stmt, 
-		   <<"SELECT * FROM `billy_merchant` WHERE `merchant_id` = ?">>),
-
-
-    %% merchant config
-
-    emysql:prepare(get_merchant_config_stmt, 
-		   <<"SELECT * FROM `billy_merchant_config` WHERE `merchant_id` = ? AND `key` = ?">>),
-
-    emysql:prepare(get_merchant_config_full_stmt, 
-		   <<"SELECT * FROM `billy_merchant_config` WHERE `merchant_id` = ?">>),
-
-
-
-    %% TODO: transactions
-
-    
     %% masspayments
 
     emysql:prepare(create_masspayment_order_stmt, 
@@ -38,7 +19,6 @@ init_stmt() ->
 		   <<"UPDATE `billy_masspayment_order` SET `close_date` = ?, `status` = ? WHERE `order_id` = ?">>),
 
 
-    
     ok.
 
 

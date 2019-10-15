@@ -139,8 +139,6 @@ check_opportunity(Req0) ->
 
 		    MerchantName = proplists:get_value(<<"name">>, MerchantUserProplist),
 
-		    %% TODO : Это говно надо переделать на RSA
-
 		    %% Проверить публичный ключ
 		    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
 		    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),

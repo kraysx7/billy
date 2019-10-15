@@ -1,7 +1,7 @@
 -module(billy_ephp_lib).
 -compile([warnings_as_errors]).
 
--include("../include/ephp.hrl").
+-include("ephp.hrl").
 
 -behaviour(ephp_func).
 
@@ -10,15 +10,24 @@
 	 init_config/0,
 	 init_const/0,
 	 reload_routes/2,
+
+	 header/4,
+
 	 get_config/3,
+	 get_merchant_config/4,
+	 get_paysystem_config/4,
+
 	 get_merchant/3,
 	 get_transaction/3,
+
 	 update_transaction_param/5,
 	 process_transaction/4,
 	 check_billy_signature/4,
 
 	 float_to_string/4,
 	 format_str/4,
+	 characters_to_binary/5,
+
 	 sort/3,
 	 implode/4,
 	 base64_decode/3,
@@ -41,7 +50,13 @@
 
 init_func() -> [
 		reload_routes,
+
+		{header, [{args, [string, string]}]},
+
 		{get_config, [{args, [string]}]},
+		{get_merchant_config, [{args, [int, string]}]},
+		{get_paysystem_config, [{args, [int, string]}]},
+
 		{get_merchant, [{args, [int]}]},
 		{get_transaction, [{args, [int]}]},
 
@@ -54,6 +69,8 @@ init_func() -> [
 
 		{float_to_string, [{args, [float, int]}]},
 		{format_str, [{args, [string, array]}]},
+		{characters_to_binary, [{args, [string, string, string]}]},
+		
 		{sort, [{args, [array]}]},
 		{implode, [{args, [string, array]}]},
 		{base64_decode, [{args, [string]}]},
@@ -88,54 +105,79 @@ init_const() -> [].
 reload_routes(_Context, _Line) ->
     billy_cow_routes:reload_routes().
 
-get_config(_Context, _Line,  {_, ConfigKey}) ->
+
+header(Context, _Line, {_, HeaderKey}, {_, HeaderVal}) ->
+    case ephp_context:get_meta(Context, <<"headers">>) of
+	undefined ->
+	    ephp_context:set_meta(Context, <<"headers">>, #{HeaderKey => HeaderVal});
+	Headers ->
+	    NewHeaders = maps:merge(Headers, #{HeaderKey => HeaderVal}),
+	    ephp_context:set_meta(Context, <<"headers">>, NewHeaders)
+    end.
+    
+
+
+get_config(_Context, _Line, {_, ConfigKey}) ->
     billy_config:get(binary_to_atom(ConfigKey, utf8)).
 
 
-get_merchant(_Context, _Line,  {_, MerchantId}) ->
-    io:format("DEBUG>>> billy_ephp_lib:get_merchant ~p~n", [MerchantId]),
-    case billy_cbserver:get_user(#{user_id => MerchantId, res_type => json}) of
-	{ok, []} ->
-	    io:format("DEBUG>>> billy_ephp_lib:get_merchant error: not_found!~n"),
-	    proplist_to_ephp_array(#{proplist => []});
+get_merchant_config(_Context, _Line, {_, MerchantId}, {_, ConfigKey}) ->
+    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
+    {ok, [{_, ConfigValue}]} = billy_config:get(#{merchant_config => MerchantConfig, key => ConfigKey}),
+    ConfigValue.
 
-	%% Мерчант успешно получен
-	{ok, [MerchantProplist]} ->
-	    MerchantPhpArray = proplist_to_ephp_array(#{proplist => MerchantProplist}),
-	    io:format("DEBUG>>> billy_ephp_lib:get_merchant MerchantPhpArray ~p~n", [MerchantPhpArray]),
-	    MerchantPhpArray;
 
-	%% Такого мерчанта не существует 
-	{error, not_found} -> 
-	    io:format("DEBUG>>> billy_ephp_lib:get_merchant error: not_found!~n"),
-	    proplist_to_ephp_array(#{proplist => []})
+get_paysystem_config(_Context, _Line, {_, MerchantId}, {_, PaySystemKey}) ->
+    case billy_config:get(#{merchant_id => MerchantId, paysystem_key => PaySystemKey}) of
+	{ok, ConfigMap} -> 
+	    %% Т.к. api возвращает map, делаем преобразование в erljson таким радикальным способом
+	    %% TODO: дописать функцию -> map_to_ephp_array()
+	    ConfigErlJson = jiffy:decode(jiffy:encode(ConfigMap)),
+	    erljson_to_ephp_array(#{erljson => ConfigErlJson});
+	{error, not_found} -> proplist_to_ephp_array(#{proplist => []})
     end.
 
 
-get_transaction(_Context, _Line,  {_, TrId}) ->
-    case billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}) of
+get_merchant(_Context, _Line, {_, MerchantId}) ->
+    case billy_merchant:get(#{merchant_id => MerchantId}) of
+	%% Такого мерчанта не существует 
+	{ok, []} -> proplist_to_ephp_array(#{proplist => []});
+
+	%% Мерчант успешно получен
+	{ok, [Merchant | _]} -> proplist_to_ephp_array(#{proplist => Merchant});
+
+	%% Такого мерчанта не существует 
+	{error, not_found} -> proplist_to_ephp_array(#{proplist => []})
+    end.
+
+
+get_transaction(_Context, _Line, {_, TrId}) ->
+    case billy_transaction:get(#{transaction_id => TrId}) of
+	%% Такой транзакции не существует
+	{ok, []} -> proplist_to_ephp_array(#{proplist => []});
+
 	%% Транзакция успешно получена
-	{ok, TrProplist} -> proplist_to_ephp_array(#{proplist => TrProplist});
+	{ok, [Tr | _]} -> proplist_to_ephp_array(#{proplist => Tr});
 
 	%% Такой транзакции не существует
 	{error, not_found} -> proplist_to_ephp_array(#{proplist => []})
     end.
 
 
-update_transaction_param(_Context, _Line,  {_, TrId}, {_, ParamKey}, {_, ParamValue}) ->
-    case billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}) of
+update_transaction_param(_Context, _Line, {_, TrId}, {_, ParamKey}, {_, ParamValue}) ->
+    case billy_transaction:get(#{transaction_id => TrId}) of
 	%% Транзакция успешно получена
-	{ok, TrProplist} ->
+	{ok, [Tr | _]} ->
 					 
 	    %% Сохранить токен в параметрах транзакции
-	    TrParamsBin = proplists:get_value(<<"params">>, TrProplist),
+	    TrParamsBin = proplists:get_value(<<"params">>, Tr),
 	    TrParams = jiffy:decode(TrParamsBin, [return_maps]),
 	    NewTrParams = maps:merge(TrParams, #{ParamKey => ParamValue}),
 	    NewTrParamsBin = jiffy:encode(NewTrParams),
 	    
 	    %% io:format("DEBUG>>> billy_ephp_lib:update_transaction_param #~p  NewTrParamsBin: ~ts~n", [TrId, NewTrParamsBin]),
 	    
-	    case billy_cbserver:update_transaction(#{transaction_id => TrId, params => NewTrParamsBin, params_type => json_str}) of
+	    case billy_transaction:update(#{transaction_id => TrId, params => NewTrParamsBin}) of
 		%% Параметры успешно обновлены
 		ok -> 0;
 
@@ -153,7 +195,7 @@ process_transaction(_Context, _Line,  {_, TrId}, {_, ProcessResult}) ->
     %% ProcessResult = <<"success">> | <<"fail">> | <<"refund">> | <<"...">>,
     case billy_payment:process_transaction(#{transaction_id => TrId, process_result => ProcessResult}) of
 	%% Транзакция успешно обработана
-	{ok, _NewBalance} ->
+	ok ->
 
 	    %% Немедленно вызвать IPN к мерчанту
 	    NotifyParamsMap = #{transaction_id => TrId},
@@ -171,38 +213,33 @@ process_transaction(_Context, _Line,  {_, TrId}, {_, ProcessResult}) ->
 
 check_billy_signature(_Context, _Line, {_, TrId}, {_, Signature}) ->
     %% Получить транзакцию
-    case billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}) of
-	{ok, TrProplist} ->
+    case billy_transaction:get(#{transaction_id => TrId}) of
+	{ok, [TrProplist | _]} ->
 	    %% Получить мерчанта		    
-	    MerchantId = proplists:get_value(<<"user_id">>, TrProplist),
-	    case billy_cbserver:get_user(#{user_id => MerchantId, res_type => json}) of
-		{ok, [MerchantUserProplist]} ->
-		    
-		    %% Получаем параметры
-		    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-		    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-		    
-		    %% Получаем секретный ключ мерчанта
-		    MerchantSecretKey = maps:get(<<"secret_key">>, MerchantParams),
-		    
-		    %% Формируем сигнатуру
-		    TrParamsBinJson = proplists:get_value(<<"params">>, TrProplist),
-		    TrParams = jiffy:decode(TrParamsBinJson, [return_maps]),
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
 
-		    BillId = maps:get(<<"bill_id">>, TrParams),
-		    Amount = proplists:get_value(<<"cost">>, TrProplist),
-		    Ccy = proplists:get_value(<<"currency_alpha">>, TrProplist),
-		    
-		    BillySignParams = #{bill_id => BillId, amount => Amount, ccy => Ccy, merchant_secret_key => MerchantSecretKey},
-		    BillySign = list_to_binary(billy_commons:get_billy_signature(BillySignParams)),
-		    
-		    %% Проверить сигнатуру
-		    case Signature of
-			%% Сигнатура в порядке
-			BillySign -> true;
-			_ ->  false
-		    end;
-		_ -> false
+	    %% Загружаем конфиг мерчанта
+	    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
+	    
+	    %% Получаем секретный ключ мерчанта
+	    {ok, [{_, MerchantSecretKey}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "secret_key"}),
+
+	    %% Формируем сигнатуру
+	    TrParamsBinJson = proplists:get_value(<<"params">>, TrProplist),
+	    TrParams = jiffy:decode(TrParamsBinJson, [return_maps]),
+	    
+	    BillId = maps:get(<<"bill_id">>, TrParams),
+	    Amount = proplists:get_value(<<"amount">>, TrProplist),
+	    Ccy = proplists:get_value(<<"ccy_alpha">>, TrProplist),
+	    
+	    BillySignParams = #{bill_id => BillId, amount => Amount, ccy => Ccy, merchant_secret_key => MerchantSecretKey},
+	    BillySign = list_to_binary(billy_commons:get_billy_signature(BillySignParams)),
+
+	    %% Проверить сигнатуру
+	    case Signature of
+		%% Сигнатура в порядке
+		BillySign -> true;
+		_ ->  false
 	    end;
 	_ -> false
     end.
@@ -211,13 +248,15 @@ check_billy_signature(_Context, _Line, {_, TrId}, {_, Signature}) ->
 
 
 float_to_string(_Context, _Line,  {_, Float}, {_, Decimals}) ->
-    float_to_list(Float, [{decimals, Decimals}]).
+    list_to_binary(float_to_list(Float, [{decimals, Decimals}])).
 
 
 format_str(_Context, _Line,  {_, FormatStr}, {_, FormatParamsArray}) ->
     FormatParamsList = ephp_array_to_list(#{ephp_array => FormatParamsArray}),
-    list_to_binary(io_lib:format(FormatStr, FormatParamsList)).
+    unicode:characters_to_binary(io_lib:format(FormatStr, FormatParamsList), utf8).
 
+characters_to_binary(_Context, _Line,  {_, Data}, {_, InEncoding}, {_, OutEncoding}) ->
+    unicode:characters_to_binary(binary_to_list(Data), binary_to_atom(InEncoding, utf8), binary_to_atom(OutEncoding, utf8)).
 
 
 sort(_Context, _Line,  {_, Array}) ->
@@ -256,7 +295,6 @@ hash(Context, Line, PType, PString) ->
 
 
 hash_hmac(_Context, _Line,  {_, Type}, {_, Key}, {_, Data}) ->
-    io:format("DEBUG>>> billy_ephp_lib:hash_hmac Type=~p Key~p~n", [Type, Key]),
     RawCryptoData = crypto:hmac(binary_to_atom(Type, utf8), Key, Data),
     list_to_binary(
       lists:flatten([io_lib:format("~2.16.0b", [B]) || <<B>> <= RawCryptoData])
@@ -266,7 +304,6 @@ hash_hmac(_Context, _Line,  {_, Type}, {_, Key}, {_, Data}) ->
 number_format(_Context, _Line,  {_, Float}, {_, Decimals}) ->
     Format = lists:flatten(io_lib:format("~ts~pf", ["~.", Decimals])),
     list_to_binary(io_lib:format(Format, [Float])).
-
 
 
 
@@ -285,7 +322,6 @@ curl(_Context, _Line,  {_, Method}, {_, Url}, {_, HeadersEphpArray}, {_, Body}, 
 	%% Запрос выполнен
 	{ok, HttpErrorCode, RespHeaders, ClientRef} ->
 	    {ok, RespBody} = hackney:body(ClientRef),
-
 	    Result = [
 		      {<<"code">>, HttpErrorCode},
 		      {<<"response">>, RespBody},
@@ -304,7 +340,7 @@ curl(_Context, _Line,  {_, Method}, {_, Url}, {_, HeadersEphpArray}, {_, Body}, 
 	    proplist_to_ephp_array(#{proplist => Result});
 	%% Костыль-заглушка для отладки. потом убрать
 	_HackneyRequestRes ->
-	    %% io:format("DEBUG>>> billy_ephp_lib:curl HackneyRequestRes=~p~n", [HackneyRequestRes]),
+	    io:format("DEBUG>>> billy_ephp_lib:curl HackneyRequestRes=~p~n", [_HackneyRequestRes]),
 	    Result = [{<<"code">>, <<"unknown">>},
 		      {<<"response">>, <<"unknown">>}],
 	    proplist_to_ephp_array(#{proplist => Result})
@@ -453,22 +489,22 @@ list_to_ephp_array(#{list := List}) ->
 		end, ephp_array:new(), List).
 
 
-    %% lists:foldl(fun
-    %% 		    ({<<"params">> = K, V}, A) -> 
-    %% 			{DV} = jiffy:decode(V),
-    %% 			SubArray = proplist_to_ephp_array(#{proplist => DV}),
-    %% 			ephp_array:store(K, SubArray, A);
-    %% 		    ({K, V}, A) when is_binary(V) -> 
-    %% 			ephp_array:store(K, V, A);
-    %% 		    ({K, V}, A) when is_integer(V) -> 
-    %% 			ephp_array:store(K, V, A);
-    %% 		    ({K, V}, A) when is_atom(V)-> 
-    %% 			VBin = list_to_binary(io_lib:format("~p", [V])),
-    %% 			ephp_array:store(K, VBin, A);
-    %% 		    ({K, {datetime, DT}} , A) -> 
-    %% 			VBin = list_to_binary(io_lib:format("~p", [DT])),
-    %% 			ephp_array:store(K, VBin, A);
-    %% 		    ({K, {E}}, A) when is_list(E) -> 
-    %% 			SubArray = proplist_to_ephp_array(#{proplist => E}),
-    %% 			ephp_array:store(K, SubArray, A)
-    %% 		end, ephp_array:new(), Proplist).
+%% lists:foldl(fun
+%% 		    ({<<"params">> = K, V}, A) -> 
+%% 			{DV} = jiffy:decode(V),
+%% 			SubArray = proplist_to_ephp_array(#{proplist => DV}),
+%% 			ephp_array:store(K, SubArray, A);
+%% 		    ({K, V}, A) when is_binary(V) -> 
+%% 			ephp_array:store(K, V, A);
+%% 		    ({K, V}, A) when is_integer(V) -> 
+%% 			ephp_array:store(K, V, A);
+%% 		    ({K, V}, A) when is_atom(V)-> 
+%% 			VBin = list_to_binary(io_lib:format("~p", [V])),
+%% 			ephp_array:store(K, VBin, A);
+%% 		    ({K, {datetime, DT}} , A) -> 
+%% 			VBin = list_to_binary(io_lib:format("~p", [DT])),
+%% 			ephp_array:store(K, VBin, A);
+%% 		    ({K, {E}}, A) when is_list(E) -> 
+%% 			SubArray = proplist_to_ephp_array(#{proplist => E}),
+%% 			ephp_array:store(K, SubArray, A)
+%% 		end, ephp_array:new(), Proplist).

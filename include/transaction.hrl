@@ -1,1 +1,0 @@
--record(transaction, {transaction_id, type, params, user_id, currency_alpha, currency_number, cost, new_balance, status, create_date, close_date}).

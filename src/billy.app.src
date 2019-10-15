@@ -1,0 +1,25 @@
+{application, billy,
+[
+    {description, "Payments gateway"},
+    {vsn, "0.5"},
+    {applications, [
+                    %% system apps
+                    kernel, stdlib, inets, crypto, mnesia, ssl,
+
+                    %% stuff apps
+                    lager, erlydtl, worker_pool, emysql, jiffy, iconv, p1_utils, recon, parse_trans,
+
+                    %% webserver apps
+                    cowboy, ephp,
+
+                    %% webclient apps
+                    public_key, hackney
+                    ]},
+    {mod, {billy_app,[]}},
+    {env, []},
+    {links, [
+                {"Github", "https://github.com/kraysx7/billy"}
+            ]},
+    {exclude_files, []},
+    {include_files, []}
+]}.

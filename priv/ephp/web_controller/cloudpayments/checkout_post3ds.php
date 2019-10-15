@@ -1,6 +1,20 @@
 <?php
-  $publicID = get_config("cloudpayments_public_id");
-  $secretKey = get_config("cloudpayments_secret_key");
+
+  //Получаем транзакцию
+  $tr_id = (int)$_POST['MD'];
+  $transaction = get_transaction($tr_id);
+
+  if(count($transaction) == 0) {
+    echo "Transaction error";
+    exit;
+  }
+
+  // Получаем настройки мерчанта для данной платёжной системы
+  $merchant_id = $transaction["merchant_id"];
+  $paysystem_config = get_paysystem_config($merchant_id, $transaction["params"]["system"]);
+
+  $publicID = $paysystem_config["public_id"];
+  $secretKey = $paysystem_config["secret_key"];
 
   $options = array();
   $headers = array(
@@ -15,24 +29,6 @@
   $response = $curl_res["response"];
 
   $jsonData = json_decode($response);
-
-  // if($jsonData['Success'] == "false") {
-  //  echo $jsonData['Message'];
-  //  exit;
-  // }
-
-  if(isset($jsonData['Model'])) {
-    $transaction = get_transaction((int)$jsonData['Model']['InvoiceId']);
-    $merchant = get_merchant((int)$transaction['user_id']);
-  }
-
-  if(count($transaction) == 0 || count($merchant) == 0) {
-    echo "Transaction error";
-    exit;
-  }
-
-  // print_r($transaction);
-  // print_r($jsonData);
 
   if($jsonData['Success'] == true &&
     $transaction['params']['payee_cost'] == (int)($jsonData['Model']['Amount']*100) &&

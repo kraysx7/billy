@@ -48,57 +48,49 @@ notification(Req) ->
 	    OutSumStr = proplists:get_value(<<"OutSum">>, ReqParamsKV),
 	    OutSum = proplists:get_value(out_sum, NormPostData),
 	    InvId = proplists:get_value(inv_id, NormPostData),
-	    MerchantPass = billy_config:get(robokassa_pass2),
 
-	    RobokassaSignParams = #{out_sum => OutSumStr, inv_id => InvId, merchant_pass => MerchantPass},
-	    InRobokassaSign = proplists:get_value(signature_value, NormPostData),
-	    
+	    %% Получить транзакцию связанную с оплатой
+	    {ok, [TrProplist | _]} = billy_transaction:get(#{transaction_id => InvId}),
+	    TrParamsStr = proplists:get_value(<<"params">>, TrProplist),
+	    TrParamsMap = jiffy:decode(TrParamsStr, [return_maps]),
+
+	    %% Загружаем конфиг мерчанта по платёжной системе
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
+	    PaySystemKey = maps:get(<<"system">>, TrParamsMap),
+	    {ok, PaysystemConfigMap} = billy_config:get(#{merchant_id => MerchantId, paysystem_key => PaySystemKey}), 
+
+	    MerchantPass = maps:get(<<"robokassa_pass2">>, PaysystemConfigMap),
+
 	    %% Проверить сигнатуру
-	    case check_robokassa_signature(RobokassaSignParams, InRobokassaSign) of
+	    LocSignParams = #{out_sum => OutSumStr, inv_id => InvId, merchant_pass => MerchantPass},
+	    ReqRobokassaSign = proplists:get_value(signature_value, NormPostData),
+	    case check_robokassa_signature(LocSignParams, ReqRobokassaSign) of
 		true ->
-		    %% получить транзакцию связанную с оплатой
-		    TrId = proplists:get_value(inv_id, NormPostData),
-		    case billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}) of
-			{ok, TrProplist} ->
+		    %% Проверить сумму и валюту платежа
+		    RoboCost = erlang:round(OutSum * 100),
+		    RoboCurrency = <<"RUB">>,
 
-			    %% Проверить сумму и валюту платежа
-			    RoboCost = erlang:round(OutSum * 100),
-			    RoboCurrency = <<"RUB">>,
+		    TrCost = proplists:get_value(<<"amount">>, TrProplist),
+		    TrCurrency = proplists:get_value(<<"ccy_alpha">>, TrProplist),
 
-			    TrCost = proplists:get_value(<<"cost">>, TrProplist),
-			    TrCurrency = proplists:get_value(<<"currency_alpha">>, TrProplist),
-
-			    %% Проверить сумму транзакции
-			    case {RoboCost, RoboCurrency} of
-				{TrCost, TrCurrency} ->
-				    %% Обработать транзакцию. т.е.
-				    %% 1) Обновить статус по базе что транзакция принята
-				    %% 2) Обновить баланс мерчанта
-				    %% TrType = proplists:get_value(<<"type">>, TrProplist),
-				    
-				    ProcessResult = <<"success">>,
-				    
-				    case billy_payment:process_transaction(#{transaction_id => TrId, process_result => ProcessResult}) of
-					{ok, _NewBalance} ->
-					    
-					    %% Немедленно вызвать IPN к мерчанту
-					    NotifyParamsMap = #{transaction_id => TrId},
-					    wpool:cast(billy_ipn_wpool, {notify, NotifyParamsMap}),
-					    
-					    %% Вернуть результат
-					    {output, <<"OK">>};
-					{error, transaction_already_processed} ->
-					    {output, <<"OK">>};
-					{error, Reason} ->
-					    {output, <<"SYSTEM PROCESS TRANSACTION ERROR">>}
-				    end;
-				{TrCost, _} -> 
-				    {output, <<"CURRENCY ERROR">>};
-				{_, TrCurrency} -> 
-				    {output, <<"AMOUNT ERROR">>};
-				_ ->
-				    {output, <<"SYSTEM ERROR">>}
-			    end
+		    %% Проверить сумму транзакции
+		    case {RoboCost, RoboCurrency} of
+			{TrCost, TrCurrency} ->
+			    ProcessResult = <<"success">>,
+			    case billy_payment:process_transaction(#{transaction_id => InvId, process_result => ProcessResult}) of
+				ok ->
+				    {output, <<"OK">>};
+				{error, transaction_already_processed} ->
+				    {output, <<"OK">>};
+				{error, Reason} ->
+				    {output, <<"SYSTEM PROCESS TRANSACTION ERROR">>}
+			    end;
+			{TrCost, _} -> 
+			    {output, <<"CURRENCY ERROR">>};
+			{_, TrCurrency} -> 
+			    {output, <<"AMOUNT ERROR">>};
+			_ ->
+			    {output, <<"SYSTEM ERROR">>}
 		    end;
 		false ->
 		    {output, <<"SIGNATURE ERROR">>}
@@ -125,47 +117,35 @@ success(Req) ->
 	    OutSumStr = proplists:get_value(<<"OutSum">>, ReqParamsKV),
 	    OutSum = proplists:get_value(out_sum, NormPostData),
 	    InvId = proplists:get_value(inv_id, NormPostData),
-	    MerchantPass = billy_config:get(robokassa_pass1),
+
+	    %% Получить транзакцию связанную с оплатой
+	    {ok, [TrProplist | _]} = billy_transaction:get(#{transaction_id => InvId}),
+	    TrParamsStr = proplists:get_value(<<"params">>, TrProplist),
+	    TrParamsMap = jiffy:decode(TrParamsStr, [return_maps]),	    
+
+	    %% Загружаем конфиг мерчанта по платёжной системе
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
+	    PaySystemKey = maps:get(<<"system">>, TrParamsMap),
+	    {ok, PaysystemConfigMap} = billy_config:get(#{merchant_id => MerchantId, paysystem_key => PaySystemKey}), 
+
+	    MerchantPass = maps:get(<<"robokassa_pass1">>, PaysystemConfigMap),
 
 	    RobokassaSignParams = #{out_sum => OutSumStr, inv_id => InvId, merchant_pass => MerchantPass},
 	    InRobokassaSign = proplists:get_value(signature_value, NormPostData),
 	    
 	    %% Проверить сигнатуру
-	    case check_robokassa_signature(RobokassaSignParams, string:to_upper(InRobokassaSign)) of
+	    LocSignParams = #{out_sum => OutSumStr, inv_id => InvId, merchant_pass => MerchantPass},
+	    ReqRobokassaSign = proplists:get_value(signature_value, NormPostData),
+	    case check_robokassa_signature(LocSignParams, string:to_upper(ReqRobokassaSign)) of
 		true ->
-		    %% получить транзакцию связанную с оплатой
-		    TrId = proplists:get_value(inv_id, NormPostData),
-		    case billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}) of
-			{ok, TrProplist} ->
-			    io:format("DEBUG>>> billy_robokassa_handler:success TrProplist=~p~n", [TrProplist]),
-			    
-			    TrParamsBinJson = proplists:get_value(<<"params">>, TrProplist),
-			    TrParams = jiffy:decode(TrParamsBinJson, [return_maps]),
-			    
-			    io:format("DEBUG>>> billy_robokassa_handler:success TrParams=~p~n", [TrParams]),
-			    
-			    case maps:get(<<"method">>, TrParams, undefined) of
-				<<"robokassa">> ->
-				    %% TODO :
-				    %% Получить данные по транзакции
-				    %% Определить, задавались ли URL перенаправления в запросе
-				    %% Если нет - получить из данных мерчанта
+		    %% Загружаем общий конфиг мерчанта
+		    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
 
-				    %% Получить данные по мерчанту транзакции
-				    TrUserId =  proplists:get_value(<<"user_id">>, TrProplist),
-				    case billy_cbserver:get_user(#{user_id => TrUserId, res_type => json}) of
-					{ok, [MerchantUserProplist]} ->
-					    
-					    %% Получить ссылки перенаправления из настроек мерчанта
-					    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-					    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-					    MerchSuccessUrl = maps:get(<<"success_url">>, MerchantParams),
+		    %% Получаем ссылку перенаправления
+		    {ok, [{_, MerchantSuccessUrl}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "success_url"}),
 
-					    {redirect, MerchSuccessUrl}
-				    end;
-				_ -> {output, <<"BAD PAYMENT METHOD">>}
-			    end
-		    end;
+		    {redirect, MerchantSuccessUrl};
+
 		false ->
 		    {output, <<"SIGNATURE ERROR">>}
 	    end
@@ -191,39 +171,17 @@ fail(Req) ->
 
 	    InvId = proplists:get_value(inv_id, NormPostData),
 
-	    %% получить транзакцию связанную с оплатой
-	    TrId = proplists:get_value(inv_id, NormPostData),
-	    case billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}) of
-		{ok, TrProplist} ->
-		    io:format("DEBUG>>> billy_robokassa_handler:fail TrProplist=~p~n", [TrProplist]),
-		    
-		    TrParamsBinJson = proplists:get_value(<<"params">>, TrProplist),
-		    TrParams = jiffy:decode(TrParamsBinJson, [return_maps]),
-		    
-		    io:format("DEBUG>>> billy_robokassa_handler:fail TrParams=~p~n", [TrParams]),
-		    
-		    case maps:get(<<"method">>, TrParams, undefined) of
-			<<"robokassa">> ->
-			    %% TODO :
-			    %% Получить данные по транзакции
-			    %% Определить, задавались ли URL перенаправления в запросе
-			    %% Если нет - получить из данных мерчанта
-			    
-			    %% Получить данные по мерчанту транзакции
-			    TrUserId =  proplists:get_value(<<"user_id">>, TrProplist),
-			    case billy_cbserver:get_user(#{user_id => TrUserId, res_type => json}) of
-				{ok, [MerchantUserProplist]} ->
-					    
-				    %% Получить ссылки перенаправления из настроек мерчанта
-				    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-				    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-				    MerchSuccessUrl = maps:get(<<"fail_url">>, MerchantParams),
-				    
-				    {redirect, MerchSuccessUrl}
-			    end;
-			_ -> {output, <<"BAD PAYMENT METHOD">>}
-		    end
-	    end		
+	    %% Получить транзакцию связанную с оплатой
+	    {ok, [TrProplist | _]} = billy_transaction:get(#{transaction_id => InvId}),
+
+	    %% Загружаем общий конфиг мерчанта
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
+	    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
+	    
+	    %% Получаем ссылку перенаправления
+	    {ok, [{_, MerchantFailUrl}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "fail_url"}),
+	    
+	    {redirect, MerchantFailUrl}
     end.
 
 
@@ -291,7 +249,7 @@ check_post_data(result, PostData) ->
 generate_robokassa_signature(#{out_sum := OutSum, inv_id := InvId, merchant_pass := MerchantPass}) when 
       (is_list(OutSum) or is_binary(OutSum)) and 
       is_integer(InvId) and
-      is_list(MerchantPass) ->
+      (is_list(MerchantPass) or is_binary(MerchantPass)) ->
 
     %% OutSumFormatted = float_to_list(OutSum, [{decimals, 2}]),
     STR = lists:flatten(io_lib:format("~ts:~p:~ts", [OutSum,InvId,MerchantPass])),

@@ -196,7 +196,7 @@ get_currency_number(#{currency_alpha := CcyAlpha}) when is_binary(CcyAlpha) ->
 
 get_billy_signature(#{bill_id := BillId, amount := Amount, ccy := Ccy, merchant_secret_key := MerchantSecretKey}) ->    
     SignStr = io_lib:format("~p~p~ts", [BillId, Amount, Ccy]),
-    Sign = crypto:hmac(sha256, SignStr, MerchantSecretKey),
+    Sign = crypto:hmac(sha256, MerchantSecretKey, SignStr),
     lists:flatten([io_lib:format("~2.16.0b", [B]) || <<B>> <= Sign]).
 
 

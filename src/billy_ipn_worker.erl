@@ -7,7 +7,9 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {}).
+
+-include("../include/billy_transaction.hrl").
+
 
 %%%===================================================================
 %%% API
@@ -22,7 +24,7 @@ start_link() ->
 
 init(Args) ->
     io:format("DEBUG>>> billy_ipn_worker(~p):init Args=~p~n", [self(),Args]),
-    {ok, #state{}}.
+    {ok, #{}}.
 
 handle_call(Command, _From, State) ->
     io:format("DEBUG>>> billy_ipn_worker(~p):handle_call(~p, ~p)~n", [self(), Command, State]),
@@ -30,53 +32,51 @@ handle_call(Command, _From, State) ->
     {reply, Reply, State}.
 
 handle_cast({notify, #{transaction_id := TrId}} = Command, State) ->
-    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast(~p, ~p)~n", [self(), Command, State]),
 
     %% Получить транзакцию из базы и проверить статус
-    {ok, TrData} = billy_cbserver:get_transaction(#{transaction_id => TrId, res_type => json}),
-    TrStatus = proplists:get_value(<<"status">>, TrData),
-    MerchantId = proplists:get_value(<<"user_id">>, TrData),
+    {ok, [Tr | _]} = billy_transaction:get(#{transaction_id => TrId}),
 
-    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast TrData=~p~n", [self(), TrData]),
+    TrStatus = proplists:get_value(<<"status">>, Tr),
+    MerchantId = proplists:get_value(<<"merchant_id">>, Tr),
 
-    %% Получить мерчанта, связаного с транзакцией
-    {ok, [MerchData | _]} = billy_cbserver:get_user(#{user_id => MerchantId, res_type => json}),
+    {ok, [Merchant | _]} = billy_merchant:get(#{merchant_id => MerchantId}),
 
-    MerchName = proplists:get_value(<<"name">>, MerchData),
-    MerchParamsBin = proplists:get_value(<<"params">>, MerchData),
-    MerchParams = jiffy:decode(MerchParamsBin, [return_maps]),
+    MerchName = proplists:get_value(<<"name">>, Merchant),
 
-    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast TrCost=~p;TrCurrency=~p~n", [self(), TrCost, TrCurrency]),
-    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast MerchParams=~p~n", [self(), MerchParams]),
-
+    %% Загружаем конфиг мерчанта
+    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
+    
     %% Получить ссылку для оповещения
-    ResultUrl = maps:get(<<"result_url">>, MerchParams),
+    {ok, [{_, ResultUrl}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "result_url"}),
 
-    %% Парсим result_url и определяем метод запроса 
+    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast MerchantConfig=~p~n", [self(), MerchantConfig]),
+    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast ResultUrl=~p~n", [self(), ResultUrl]),
+
+    %% Парсим result_url и определяем метод запроса
     case http_uri:parse(binary_to_list(ResultUrl)) of
 	%% URL валидна, информация получена
 	{ok, {ResultUrlProto, _, _ResultUrlHost, _ResultUrlPort, _ResultUrlQuery, _}} ->
 	    
 	    %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	    %% Сформировать тело IPN
-	    
+
+	    TrData = Tr, %% STUB
+
 	    %% Получить и декодировать параметры транзакции
 	    TrParamsBin = proplists:get_value(<<"params">>, TrData),
 	    TrParams = jiffy:decode(TrParamsBin, [return_maps]),
 
-	    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast TrParams=~p~n", [self(), TrParams]),
-
 	    %% Получить id транзакции в системе мерчанта
-	    BillId = maps:get(<<"bill_id">>, TrParams), 
+	    BillId = maps:get(<<"bill_id">>, TrParams),
 	    
 	    %% Получить результат обработки транзакции (приняты ли деньги реально или нет)
 	    %% Статус самой транзакции говорит о том, обработана они или нет в контексте шлюза и оповещён ли мерчант о результате
-	    ProcessResult = maps:get(<<"process_result">>, TrParams, <<"unknown">>),
-
+	    ProcessResultCode = proplists:get_value(<<"process_result_code">>, TrData, <<"unknown">>),
+	    
 	    %% Получить сумму и валюту транзакции
-	    TrCost = proplists:get_value(<<"cost">>, TrData),
+	    TrCost = proplists:get_value(<<"amount">>, TrData),
 	    FTrCost = list_to_binary(float_to_list(TrCost / 100, [{decimals,2}])),
-	    TrCurrency = proplists:get_value(<<"currency_alpha">>, TrData),
+	    TrCurrency = proplists:get_value(<<"ccy_alpha">>, TrData),
 
 	    %% Получить тип транзакции
 	    TrType = proplists:get_value(<<"type">>, TrData),
@@ -85,12 +85,11 @@ handle_cast({notify, #{transaction_id := TrId}} = Command, State) ->
 			   40 -> <<"cashout">> %% Транзакция отправки денег
 		       end,
 
-
 	    %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	    %% Подсчитать IPN сигнатуру
 
-	    %% Получить секретный ключ
-	    MerchantSecretKey = maps:get(<<"secret_key">>, MerchParams),
+	    %% Получаем секретный ключ мерчанта
+	    {ok, [{_, MerchantSecretKey}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "secret_key"}),
 
 	    %% Сформировать список параметров для подсчёта сигнатуры
 	    BillyIpnSignParams = [
@@ -98,25 +97,20 @@ handle_cast({notify, #{transaction_id := TrId}} = Command, State) ->
 				  {bill_id, BillId},
 				  {amount, TrCost},
 				  {ccy, TrCurrency},
-				  {process_result, ProcessResult}
+				  {process_result_code, ProcessResultCode}
 				 ],
 	    
 	    BillyIpnSign = billy_payment:calc_billyipn_signature(BillyIpnSignParams, MerchantSecretKey),
 	    
-	    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast BillyIpnSign=~p~n", [self(), BillyIpnSign]),
-	    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast ResultUrl=~p~n", [self(), ResultUrl]),
-	    
-	    Body = io_lib:format("bill_type=~ts&bill_id=~p&amount=~p&ccy=~ts&process_result=~ts",
+	    Body = io_lib:format("bill_type=~ts&bill_id=~p&amount=~p&ccy=~ts&process_result_code=~p",
 				 [
 				  BillType,
 				  BillId,
 				  TrCost,
 				  TrCurrency,
-				  ProcessResult
+				  ProcessResultCode
 				 ]),
-	    
-	    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast Body=~p~n", [self(), Body]),
-	    
+
 	    %% Вызвать ссылку для оповещения
 	    Headers = [{<<"x-api-signature">>, BillyIpnSign}],
 	    Options = [insecure],
@@ -129,50 +123,65 @@ handle_cast({notify, #{transaction_id := TrId}} = Command, State) ->
 		    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast HackeyReq:=~p~n", [self(), HR]),
 		    %% io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast RespBody:=~p~n", [self(), RespBody]),
 		    
+		    LocalTime = calendar:local_time(),
+
 		    case RespBody of
 			<<"OK">> ->
 
-			    error_logger:info_msg("[200] FINISH IPN >>> merchant: ~ts | +~ts ~ts  (tr_id: ~p)~n", [MerchName, FTrCost, TrCurrency, TrId]),
+			    lager:info("(http:200) FINISH IPN >>> merchant: ~ts | +~ts ~ts  (tr_id: ~p)~n", [MerchName, FTrCost, TrCurrency, TrId]),
 
 			    %% Обновить транзакцию в кэше и в базе что она обработана
-			    billy_cbserver:update_transaction(#{transaction_id => TrId,
-								old_status => TrStatus,
-								new_status => 2,
-								mode => cache}),
+			    {ok, _} = billy_transaction:update(#{transaction_id => TrId,
+								 old_ipn_process_stage => ?IPN_PROCESS_STAGE_INWORK,
+								 new_ipn_process_stage => ?IPN_PROCESS_STAGE_COMPLETE,
+								 mode => cache}),
+			    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_COMPLETE, ipn_process_date => LocalTime}),
 			    
-			    billy_cbserver:update_transaction(#{transaction_id => TrId, status => 2});
+			    %% Закрыть транзакцию!
+			    {ok, 1} = billy_transaction:close(#{transaction_id => TrId});
+
 			RespBody ->
 
-			    error_logger:info_msg("[200] ERROR IPN >>> merchant: ~ts, cost: ~ts ~ts  (tr_id: ~p) RESP: ~ts~n", [MerchName, FTrCost, TrCurrency, TrId, RespBody]),
-
-			    %% Что то там у мерчанта не получается...продолжаем попытки
-			    billy_cbserver:update_transaction(#{transaction_id => TrId,
-								old_status => TrStatus,
-								new_status => 1,
-								mode => cache}),
+			    lager:info("(http:200) ERROR IPN >>> merchant: ~ts, cost: ~ts ~ts  (tr_id: ~p) RESP: ~ts~n", [MerchName, FTrCost, TrCurrency, TrId, RespBody]),
 			    
-			    billy_cbserver:update_transaction(#{transaction_id => TrId, status => 1})
+			    %% Что то там у мерчанта не получается...продолжаем попытки
+			    {ok, _} = billy_transaction:update(#{transaction_id => TrId,
+								 old_ipn_process_stage => ?IPN_PROCESS_STAGE_INWORK,
+								 new_ipn_process_stage => ?IPN_PROCESS_STAGE_COLD,
+								 mode => cache}),
+			    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_COLD, ipn_process_date => LocalTime})
 		    end,
 		    ok;
 		%% Что-то пошло не так. (404, 500, 301 и.т.д)
 		{ok, HttpErrorCode, _RespHeaders, _ClientRef} ->
 
-		    error_logger:info_msg("[~p] ERROR IPN >>> merchant: ~ts, cost: ~ts ~ts  (tr_id: ~p)~n", [HttpErrorCode, MerchName, FTrCost, TrCurrency, TrId]),
+		    LocalTime = calendar:local_time(),
 
-		    %% Обновить статус транзакции в кэше и в базе = 6. Холодное обновление
-		    %% Транзакции с таким статусом обрабатываются раз в 2 мин.
-		    billy_cbserver:update_transaction(#{transaction_id => TrId,
-							old_status => TrStatus,
-							new_status => 6,
-							mode => cache}),
+		    lager:info("[http:~p] ERROR IPN >>> merchant: ~ts, cost: ~ts ~ts  (tr_id: ~p)~n", [HttpErrorCode, MerchName, FTrCost, TrCurrency, TrId]),
+
+		    {ok, _} = billy_transaction:update(#{transaction_id => TrId,
+							 old_ipn_process_stage => ?IPN_PROCESS_STAGE_INWORK,
+							 new_ipn_process_stage => ?IPN_PROCESS_STAGE_COLD,
+							 mode => cache}),
+		    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_COLD, ipn_process_date => LocalTime});
+
+		{error, connect_timeout} ->
+
+		    LocalTime = calendar:local_time(),
+
+		    lager:info("[~p] ERROR IPN >>> merchant: ~ts, cost: ~ts ~ts  (tr_id: ~p)~n", [timeout, MerchName, FTrCost, TrCurrency, TrId]),
 		    
-		    billy_cbserver:update_transaction(#{transaction_id => TrId, status => 6}),
-		    ok;
+		    {ok, _} = billy_transaction:update(#{transaction_id => TrId,
+							 old_ipn_process_stage => ?IPN_PROCESS_STAGE_INWORK,
+							 new_ipn_process_stage => ?IPN_PROCESS_STAGE_COLD,
+							 mode => cache}),
+		    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_COLD, ipn_process_date => LocalTime});
+
 		%% Костыль-заглушка для отладки. потом убрать
 		Resp ->
 
 		    error_logger:info_msg("DEBUG>>> billy_ipn_worker(~p):handle_cast HTTP ERROR RESPONSE: ~p~n", [self(), Resp]),
-
+		    
 		    ok;
 		%% Такого домена не существует (received an NXDOMAIN error from a DNS)
 		{error, nxdomain} ->
@@ -188,13 +197,17 @@ handle_cast({notify, #{transaction_id := TrId}} = Command, State) ->
 	ParceResultUrlErr ->
 	    %% Обновить статус транзакции как 'ошибочная'
 	    %% TODO: запретить мерчанту создавать новые транзакции
-	    io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast ParceResultUrlErr=~p~n", [self(), ParceResultUrlErr]),
+
+	    error_logger:info_msg("DEBUG>>> billy_ipn_worker(~p):handle_cast  ParceResultUrlErr=~p~n", [self(), ParceResultUrlErr]),
+
 	    {noreply, State}
     end;
 
 
 handle_cast(Command, State) ->
-    io:format("DEBUG>>> billy_ipn_worker(~p):handle_cast(~p, ~p)~n", [self(), Command, State]),
+
+    error_logger:info_msg("DEBUG>>> billy_ipn_worker(~p):handle_cast(~p, ~p)~n", [self(),  Command, State]),
+
     {noreply, State}.
 
 handle_info(Info, State) ->

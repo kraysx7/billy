@@ -2,7 +2,7 @@
 
 -export([start/0, stop/0]).
 
--include("../include/transaction.hrl").
+-include("../include/billy_transaction.hrl").
 -include("../include/rate.hrl").
 
 start() ->
@@ -34,6 +34,9 @@ start() ->
     %% Инициализируем mnesia
     init_mnesia(),
 
+    %% Запускаем lager
+    lager:start(),
+
     %% Запускаем mysql клиент
     {ok, _} = application:ensure_all_started(emysql),
 
@@ -60,8 +63,8 @@ stop() ->
 init_mnesia() ->
     %% Создаём схему кэш таблички transaction
     mnesia:create_table(transaction_cache,
-     			[{attributes, record_info(fields, transaction)},
-     			 {record_name, transaction},
+     			[{attributes, record_info(fields, billy_transaction)},
+     			 {record_name, billy_transaction},
      			 {type, set}]),
     
     %% Создаём схему кэш таблички cbrates (текущие(daily) котировки центрального банка)

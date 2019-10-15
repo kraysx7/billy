@@ -1,10 +1,16 @@
 <?php
   if (isset($_POST['m_operation_id']) && isset($_POST['m_sign']))
   {
-    $transaction = get_transaction((int)$_POST['m_orderid']);
-    $merchant = get_merchant((int)$transaction['user_id']);
+    $tr_id = (int)$_POST['m_orderid'];
 
-    $m_key = get_config("payeer_secret_key");
+    // Получаем данные о транзакции
+    $transaction = get_transaction($tr_id);
+
+    // Получаем настройки мерчанта для данной платёжной системы
+    $merchant_id = (int)$transaction['merchant_id'];
+    $paysystem_config = get_paysystem_config($merchant_id, $transaction['params']['system']);
+
+    $m_key = $paysystem_config['payeer_secret_key'];
     $arHash = array(
       $_POST['m_operation_id'],
       $_POST['m_operation_ps'],
@@ -24,21 +30,22 @@
     }
     // Добавляем в массив секретный ключ
     $arHash[] = $m_key;
+
     // Формируем подпись
     $sign_hash = strtoupper(hash('sha256', implode(':', $arHash)));
-    
+
     // Если подпись, сумма и валюта совпадают и статус платежа “Выполнен” - закрываем транзакцию успешно
     if ($_POST['m_sign'] == $sign_hash && $_POST['m_status'] == 'success' &&
         $transaction['params']['payee_cost'] == (int)$_POST['m_amount']*100 &&
         $transaction['params']['payee_ccy'] == $_POST['m_curr'])
     {
-      process_transaction((int)$_POST['m_orderid'], 'success');
-      exit($_POST['m_orderid'].'|success');    
+      process_transaction($tr_id, 'success');
+      exit(''.$tr_id.'|success');
     }
     // В противном случае возвращаем ошибку
     else
     {
-      process_transaction((int)$_POST['m_orderid'], 'fail');
-      exit($_POST['m_orderid'].'|error');
+      process_transaction($tr_id, 'fail');
+      exit(''.$tr_id.'|error');
     }
   }?>

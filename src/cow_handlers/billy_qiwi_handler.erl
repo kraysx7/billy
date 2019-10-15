@@ -62,6 +62,18 @@ notification_p2p(Req) ->
 	    
 	    QiwiBillCurrency = maps:get(<<"currency">>, QiwiBillAmountMap),
 
+	    %% Получить транзакцию связанную с оплатой
+	    {ok, [TrProplist | _]} = billy_transaction:get(#{transaction_id => BillIdInt}),
+	    TrParamsStr = proplists:get_value(<<"params">>, TrProplist),
+	    TrParamsMap = jiffy:decode(TrParamsStr, [return_maps]),
+
+	    %% Загружаем конфиг мерчанта по платёжной системе
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
+	    PaySystemKey = maps:get(<<"system">>, TrParamsMap),
+	    {ok, PaysystemConfigMap} = billy_config:get(#{merchant_id => MerchantId, paysystem_key => PaySystemKey}), 
+
+	    QiwiApiSecretKey = maps:get(<<"qiwi_api_secret_key">>, PaysystemConfigMap),
+
 	    %% Проверить сигнатуру
 	    QiwiSignParams = #{
 	      amount => QiwiBillAmountStr,
@@ -73,44 +85,33 @@ notification_p2p(Req) ->
 
 	    %% Прочитать HTTP заголовок X-Api-Signature
 	    QiwiSign = cowboy_req:header(<<"x-api-signature-sha256">>, Req),
-
-	    case check_qiwi_signature_p2p(QiwiSignParams, QiwiSign) of
+	    case check_qiwi_signature_p2p(QiwiSignParams, QiwiSign, QiwiApiSecretKey) of
 		true ->
-		    %% Получить транзакцию связанную с оплатой
-		    case billy_cbserver:get_transaction(#{transaction_id => BillIdInt, res_type => json}) of
-			{ok, TrProplist} ->
+		    TrCost = proplists:get_value(<<"amount">>, TrProplist),
+		    TrCurrency = proplists:get_value(<<"ccy_alpha">>, TrProplist),
 
-			    TrCost = proplists:get_value(<<"cost">>, TrProplist),
-			    TrCurrency = proplists:get_value(<<"currency_alpha">>, TrProplist),
+		    %% Проверить сумму транзакции
+		    case {QiwiBillAmountInt, QiwiBillCurrency} of
+			{TrCost, TrCurrency} ->
 
-			    %% Проверить сумму транзакции
-			    case {QiwiBillAmountInt, QiwiBillCurrency} of
-				{TrCost, TrCurrency} ->
+			    ProcessResult = <<"success">>,
 
-				    ProcessResult = <<"success">>,
-
-				    case billy_payment:process_transaction(#{transaction_id => BillIdInt, process_result => ProcessResult}) of
-					{ok, _NewBalance} ->
-
-					    %% Немедленно вызвать IPN к мерчанту
-					    NotifyParamsMap = #{transaction_id => BillIdInt},
-					    wpool:cast(billy_ipn_wpool, {notify, NotifyParamsMap}),
-
-					    {output, jiffy:encode(#{error => 0}), RespHeaders};
-					
-					{error, transaction_already_processed} ->
-					    {output, jiffy:encode(#{error => 0}), RespHeaders};
-
-					{error, Reason} ->
-					    {output, jiffy:encode(#{error => 0}), RespHeaders}
-				    end;
-				{TrCost, _} -> 
+			    case billy_payment:process_transaction(#{transaction_id => BillIdInt, process_result => ProcessResult}) of
+				ok ->
 				    {output, jiffy:encode(#{error => 0}), RespHeaders};
-				{_, TrCurrency} -> 
+
+				{error, transaction_already_processed} ->
 				    {output, jiffy:encode(#{error => 0}), RespHeaders};
-				_ ->
+
+				{error, Reason} ->
 				    {output, jiffy:encode(#{error => 0}), RespHeaders}
-			    end
+			    end;
+			{TrCost, _} -> 
+			    {output, jiffy:encode(#{error => 0}), RespHeaders};
+			{_, TrCurrency} -> 
+			    {output, jiffy:encode(#{error => 0}), RespHeaders};
+			_ ->
+			    {output, jiffy:encode(#{error => 0}), RespHeaders}
 		    end;
 		_ ->
 		    io:format("DEBUG>>> billy_qiwi_handler:notification_p2p check_qiwi_signature ERROR!~n"),
@@ -254,36 +255,19 @@ success(Req) ->
     %% Прочитать параметр order
     #{order := OrderId} = cowboy_req:match_qs([order], Req),
 
-    %% Qs = cowboy_req:parse_qs(Req),
-    %% io:format("DEBUG>>> billy_qiwi_handler:success! Qs=~p~n", [Qs]),
-
     %% получить транзакцию связанную с оплатой
-    case billy_cbserver:get_transaction(#{transaction_id => OrderId, res_type => json}) of
-	{ok, TrProplist} ->
-	    io:format("DEBUG>>> billy_qiwi_handler:success TrProplist=~p~n", [TrProplist]),
+    case billy_transaction:get(#{transaction_id => OrderId}) of
+	{ok, [TrProplist | _]} ->
+
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
+
+	    %% Загружаем конфиг мерчанта
+	    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
 	    
-	    TrParamsBinJson = proplists:get_value(<<"params">>, TrProplist),
-	    TrParams = jiffy:decode(TrParamsBinJson, [return_maps]),
-	    
-	    io:format("DEBUG>>> billy_qiwi_handler:success TrParams=~p~n", [TrParams]),
-	    
-	    %% TODO :
-	    %% Получить данные по транзакции
-	    %% Определить, задавались ли URL перенаправления в запросе
-	    %% Если нет - получить из данных мерчанта
-	    
-	    %% Получить данные по мерчанту транзакции
-	    TrUserId =  proplists:get_value(<<"user_id">>, TrProplist),
-	    case billy_cbserver:get_user(#{user_id => TrUserId, res_type => json}) of
-		{ok, [MerchantUserProplist]} ->
-		    
-		    %% Получить ссылки перенаправления из настроек мерчанта
-		    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-		    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-		    MerchSuccessUrl = maps:get(<<"success_url">>, MerchantParams),
-		    
-		    {redirect, MerchSuccessUrl}
-	    end
+	    %% Получаем URL перенаправления для успешного платежа
+	    {ok, [{_, MerchSuccessUrl}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "success_url"}),
+
+	    {redirect, MerchSuccessUrl}
     end.
 
 
@@ -291,37 +275,22 @@ fail(Req) ->
     %% Прочитать параметр order
     #{order := OrderId} = cowboy_req:match_qs([order], Req),
 
-    %% Qs = cowboy_req:parse_qs(Req),
-    %% io:format("DEBUG>>> billy_qiwi_handler:success! Qs=~p~n", [Qs]),
-
     %% получить транзакцию связанную с оплатой
-    case billy_cbserver:get_transaction(#{transaction_id => OrderId, res_type => json}) of
-	{ok, TrProplist} ->
-	    io:format("DEBUG>>> billy_qiwi_handler:success TrProplist=~p~n", [TrProplist]),
+    case billy_transaction:get(#{transaction_id => OrderId}) of
+	{ok, [TrProplist | _]} ->
+
+	    MerchantId = proplists:get_value(<<"merchant_id">>, TrProplist),
+
+	    %% Загружаем конфиг мерчанта
+	    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
 	    
-	    TrParamsBinJson = proplists:get_value(<<"params">>, TrProplist),
-	    TrParams = jiffy:decode(TrParamsBinJson, [return_maps]),
-	    
-	    io:format("DEBUG>>> billy_qiwi_handler:success TrParams=~p~n", [TrParams]),
-	    
-	    %% TODO :
-	    %% Получить данные по транзакции
-	    %% Определить, задавались ли URL перенаправления в запросе
-	    %% Если нет - получить из данных мерчанта
-	    
-	    %% Получить данные по мерчанту транзакции
-	    TrUserId =  proplists:get_value(<<"user_id">>, TrProplist),
-	    case billy_cbserver:get_user(#{user_id => TrUserId, res_type => json}) of
-		{ok, [MerchantUserProplist]} ->
-		    
-		    %% Получить ссылки перенаправления из настроек мерчанта
-		    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-		    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-		    MerchSuccessUrl = maps:get(<<"fail_url">>, MerchantParams),
-		    
-		    {redirect, MerchSuccessUrl}
-	    end
+	    %% Получаем URL перенаправления для отклонённого платежа
+	    {ok, [{_, MerchFailUrl}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "fail_url"}),
+
+	    {redirect, MerchFailUrl}
     end.
+
+
 
 
 unknown_method() ->
@@ -601,7 +570,7 @@ check_qiwi_signature(QiwiSignParams, QiwiSign) when is_binary(QiwiSign) ->
 
 
 
-check_qiwi_signature_p2p(QiwiSignParams, QiwiSign) ->
+check_qiwi_signature_p2p(QiwiSignParams, QiwiSign, QiwiApiSecretKey) ->
 
     #{
        amount := Amount,
@@ -611,10 +580,11 @@ check_qiwi_signature_p2p(QiwiSignParams, QiwiSign) ->
        status := Status
      } = QiwiSignParams,
 
-    ShaKey = unicode:characters_to_binary(billy_config:get(qiwi_api_secret_key), utf8),
+    ShaKey = QiwiApiSecretKey,
     ShaData = list_to_binary(io_lib:format("~ts|~ts|~ts|~ts|~ts", [Currency, Amount, BillId, SiteId, Status])),
     SignatureDigest = crypto:hmac(sha256, ShaKey, ShaData),
     SignatureStr = list_to_binary(lists:flatten([io_lib:format("~2.16.0b", [B]) || <<B>> <= SignatureDigest])),
+
     case SignatureStr of
 	QiwiSign -> true;
 	_ -> false

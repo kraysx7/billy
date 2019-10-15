@@ -1,92 +1,57 @@
 -module(billy_payment).
 -export([process_transaction/1, calc_billyipn_signature/2]).
 
--define(TR_TYPE_ADDBALANCE, 10).
+-include("../include/billy_transaction.hrl").
 
+process_transaction(#{transaction_id := TrId, process_result := <<"success">>}) ->
 
-process_transaction(#{transaction_id := TrId, process_result := <<"fail">>}) ->
-    %% Получить транзакцию из кэша и обновить её статус
-    CheckTrRes = case billy_cbserver:get_transaction(#{transaction_id=>TrId, mode=>cache, res_type=>json}) of
-		     {ok, CacheTrProplist0} ->
-			 case billy_cbserver:update_transaction(#{transaction_id=>TrId, old_status=>0, new_status=>3, mode=>cache}) of
-			     {ok, _NewCacheTr} -> {ok, CacheTrProplist0};
-			     _ -> {error, bad_old_status}
-			 end;
-		     R ->
-			 io:format("DEBUG>>> billy_payment:process_transaction  R: ~p~n", [ R]),
-			 {error, trasaction_not_found}
-		 end,
+    %% Обновить статус транзакции в кэше
+    case billy_transaction:update(#{transaction_id => TrId,
+				    old_status => ?TR_STATUS_OPENED,
+				    new_status => ?TR_STATUS_PROCESSED,
+				    mode => cache}) of
+	{ok, ?TR_STATUS_PROCESSED} -> 
 
-    case CheckTrRes of
-	{ok, CacheTrProplist} -> 
-	    TrUserId = proplists:get_value(<<"user_id">>, CacheTrProplist),
-	    TrCost = proplists:get_value(<<"cost">>, CacheTrProplist),
-	    case billy_cbserver:update_user_balance(TrUserId, TrCost) of
-		{ok, NewBalance} ->
+	    %% Обновить текущий этап ipn в кэше
+	    ok = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, mode => cache}),
 
-		    TrParamsBin = proplists:get_value(<<"params">>, CacheTrProplist),
-		    TrParams = jiffy:decode(TrParamsBin, [return_maps]),
-		    NewTrParams = maps:merge(TrParams, #{process_result => <<"fail">>}),
-		    NewTrParamsBin = jiffy:encode(NewTrParams),
+	    LocalTime = calendar:local_time(),
+	    
+	    %% Обновить статус транзакции в базе
+	    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, process_result_code => ?TR_PROCESS_RESULT_SUCCESS, status => ?TR_STATUS_PROCESSED}),
+	    
+	    %% Обновить текущий этап ipn и дату начала в бд
+	    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, ipn_process_date => LocalTime}),
 
-		    error_logger:info_msg("DEBUG>>> billy_payment:process_transaction #~p  NewTrParamsBin: ~ts~n", [TrId, NewTrParamsBin]),
+	    ok;
 
-		    billy_cbserver:update_transaction(#{transaction_id => TrId, params => NewTrParamsBin, params_type => json_str}),
-
-		    billy_cbserver:close_transaction(TrId, NewBalance, 3),
-		    
-		    {ok, NewBalance};
-		{error, low_balance, UserBalance} -> 
-		    %% billy_cbserver:close_transaction(TrId, UserBalance, ?TR_STATUS_ERROR_LOW_BALANCE),
-		    {error, low_balance};
-		{error, user_not_found} -> {error, user_not_found}
-	    end;
 	_ -> {error, transaction_already_processed}
     end;
 
-process_transaction(#{transaction_id := TrId, process_result := <<"success">>}) ->
-    %% Получить транзакцию из кэша и обновить её статус
-    CheckTrRes = case billy_cbserver:get_transaction(#{transaction_id=>TrId, mode=>cache, res_type=>json}) of
-		     {ok, CacheTrProplist0} ->
-			 case billy_cbserver:update_transaction(#{transaction_id=>TrId, old_status=>0, new_status=>1, mode=>cache}) of
-			     {ok, _NewCacheTr} -> {ok, CacheTrProplist0};
-			     _ -> {error, bad_old_status}
-			 end;
-		     R ->
-			 io:format("DEBUG>>> billy_qiwi_handler:process_transaction  R: ~p~n", [ R]),
-			 {error, trasaction_not_found}
-		 end,
 
-    case CheckTrRes of
-	{ok, CacheTrProplist} -> 
-	    TrUserId = proplists:get_value(<<"user_id">>, CacheTrProplist),
-	    TrCost = proplists:get_value(<<"cost">>, CacheTrProplist),
-	    case billy_cbserver:update_user_balance(TrUserId, TrCost) of
-		{ok, NewBalance} ->
+process_transaction(#{transaction_id := TrId, process_result := <<"fail">>}) ->
+    %% Обновить статус транзакции в кэше
+    case billy_transaction:update(#{transaction_id => TrId,
+				    old_status => ?TR_STATUS_OPENED,
+				    new_status => ?TR_STATUS_PROCESSED,
+				    mode => cache}) of
+	{ok, ?TR_STATUS_PROCESSED} -> 
+	    
+	    %% Обновить текущий этап ipn в кэше
+	    ok = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, mode => cache}),
 
-		    TrParamsBin = proplists:get_value(<<"params">>, CacheTrProplist),
-		    TrParams = jiffy:decode(TrParamsBin, [return_maps]),
-		    NewTrParams = maps:merge(TrParams, #{process_result => <<"success">>}),
-		    NewTrParamsBin = jiffy:encode(NewTrParams),
+	    LocalTime = calendar:local_time(),
+	    
+	    %% Обновить статус транзакции и код результата обработки в базе
+	    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, process_result_code => ?TR_PROCESS_RESULT_FAIL, status => ?TR_STATUS_PROCESSED}),
+	    
+	    %% Обновить текущий этап ipn и дату начала в бд
+	    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, ipn_process_date => LocalTime}),
 
-		    error_logger:info_msg("DEBUG>>> billy_payment:process_transaction #~p  NewTrParamsBin: ~ts~n", [TrId, NewTrParamsBin]),
+	    ok;
 
-		    billy_cbserver:update_transaction(#{transaction_id => TrId, params => NewTrParamsBin, params_type => json_str}),
-
-		    billy_cbserver:close_transaction(TrId, NewBalance, 1),
-		    
-		    {ok, NewBalance};
-		{error, low_balance, UserBalance} -> 
-		    %% billy_cbserver:close_transaction(TrId, UserBalance, ?TR_STATUS_ERROR_LOW_BALANCE),
-		    {error, low_balance};
-		{error, user_not_found} -> {error, user_not_found}
-	    end;
-	_ -> {error, transaction_already_processed}
+	_ -> {error, transaction_already_processed}	
     end.
-
-
-
-    
 
 
 
