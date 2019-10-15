@@ -1,0 +1,87 @@
+[{billy, [
+    {listen_address, "0.0.0.0"},
+    {listen_port,    32123},
+
+    {cbserver_node, 'cbserver_billy@192.168.1.7'},
+
+%%%%%%%%%%%%%%
+%% Database %%
+%%%%%%%%%%%%%%
+
+    {mysql_host, "localhost"},
+    {mysql_port, 3306},
+    {mysql_username, "root"},
+    {mysql_password, "root"},
+    {mysql_database, "billy"},
+
+
+%%%%%%%%%%%%%%%%%%
+%% Masspayments %%
+%%%%%%%%%%%%%%%%%%
+
+    {masspayments_config,
+      #{qiwi =>
+                [
+                  #{group_id => 0, qiwi_api_personid => "79261112233", qiwi_oauth_token => ""},
+                  #{group_id => 1, qiwi_api_personid => "79261112233", qiwi_oauth_token => ""},
+                  #{group_id => 2, qiwi_api_personid => "79261112233", qiwi_oauth_token => ""}
+                ],
+        steam =>
+                [
+                  #{group_id => 0, qiwi_api_personid => "", qiwi_oauth_token => ""}
+                ],
+        payeer =>
+                [
+                  #{group_id => 0, payeer_account => "", payeer_api_user_id => "", payeer_api_secret_key => ""}
+                ],
+        paykassa =>
+                [
+                  #{group_id => 0, paykassa_api_id => "", paykassa_api_key => "", paykassa_shop_id => "", paykassa_shop_name => ""}
+                ]
+      }
+    }
+
+  ]},
+
+%%%%%%%%%%%%%
+%% Logging %%
+%%%%%%%%%%%%%
+
+%% Lager default config.
+%% More info: https://github.com/basho/lager
+
+{lager, [
+    {handlers, [
+      {lager_console_backend, [{level, info}, {formatter, lager_default_formatter}, {formatter_config, [date, " ", time," [",severity,"] ",pid, " ", message, "\n"]}]},
+      {lager_file_backend, [{file, "log/error.log"}, {level, error}]},
+      {lager_file_backend, [{file, "log/console.log"}, {level, info},
+                            {formatter, lager_default_formatter}, {formatter_config, [date, " ", time," [",severity,"] ",pid, " ", message, "\n"]}]}
+    ]}
+  ]},
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Ephp build-in modules %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+{ephp, [
+    {modules, [
+      ephp_lib_date,
+      ephp_lib_vars,
+      ephp_lib_math,
+      ephp_lib_misc,
+      ephp_lib_ob,
+      ephp_lib_control,
+      ephp_lib_array,
+      ephp_lib_string,
+      ephp_lib_file,
+      ephp_lib_func,
+      ephp_lib_info,
+      ephp_lib_class,
+      ephp_lib_error,
+      ephp_lib_pcre,
+      ephp_lib_spl,
+      ephp_lib_exec
+    ]}
+  ]}
+
+].

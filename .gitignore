@@ -3,7 +3,8 @@ _build/
 
 ebin/
 
-config/
+config/billy.config
+config/vm.args
 
 doc/
 
