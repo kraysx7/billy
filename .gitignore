@@ -10,7 +10,7 @@ doc/
 
 log/
 
-sql/
+sql/init_prod
 
 deps/
 
