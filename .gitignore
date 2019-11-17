@@ -10,6 +10,7 @@ doc/
 
 log/
 
+sql/init_dev
 sql/init_prod
 
 deps/
