@@ -17,6 +17,8 @@ deps/
 
 temp/
 
+priv/trusted_certs/connectum
+
 *~
 
 rebar.lock
