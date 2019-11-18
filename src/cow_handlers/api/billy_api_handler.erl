@@ -185,9 +185,9 @@ create_payment(Req0) ->
 	{error, _} ->
 
 	    %% Неверный формат входных данных
-	    Responce = #{status => error, error_code => 1},
-	    Body = jiffy:encode(Responce),
-	    {ok, Body};
+	    Response = #{status => error, error_code => 1},
+	    ResponseBody = jiffy:encode(Response),
+	    {ok, 200, #{<<"content-type">> => <<"application/json">>}, ResponseBody};
 
 	{ok, NormPostData} ->
 
@@ -307,9 +307,9 @@ create_payment(Req0) ->
 
 			%% else (Сигнатура неверна)
 			true ->
-			    Responce = #{status => error, error_code => 3},
-			    Body = jiffy:encode(Responce),
-			    {ok, Body}
+			    Response = #{status => error, error_code => 3},
+			    ResponseBody = jiffy:encode(Response),
+			    {ok, 200, #{<<"content-type">> => <<"application/json">>}, ResponseBody}
 		    end
 	    end
     end.
