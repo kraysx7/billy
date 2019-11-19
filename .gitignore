@@ -24,3 +24,5 @@ priv/trusted_certs/connectum
 rebar.lock
 
 .build_date
+
+.git-credentials
