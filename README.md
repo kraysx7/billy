@@ -17,13 +17,13 @@ BILLY реализует основной функционал платёжно�
 
 Получаем исходный код приложения и компилируем :
 
-$ git clone https://github.com/kraysx7/billy.git
-$ cd billy
-$ ./rebar3 compile
+	$ git clone https://github.com/kraysx7/billy.git
+	$ cd billy
+	$ ./rebar3 compile
 
 После успешной компиляции, можно запустить сервер в shell режиме с помощью команды ./rebar3 shell , или подготовить релиз для запуска :
 
-$ ./rebar3 release
+	$ ./rebar3 release
 
 Подготовленный релиз будет находится в папке *_build/default/rel*  , который можно скопировать в любое место файловой системы на ваше усмотрение.
 
@@ -58,18 +58,18 @@ $ ./rebar3 release
 
 Создаём базу
 
-mysql > CREATE DATABASE `billy`;
-mysql > USE `billy`;
+	mysql > CREATE DATABASE `billy`;
+	mysql > USE `billy`;
 
 Создаём таблицы
 
-mysql (billy)> source %BILLY_DIR%/sql/billy_config.sql;
-mysql (billy)> source %BILLY_DIR%/sql/billy_masspayment_order.sql
-mysql (billy)> source %BILLY_DIR%/sql/billy_transaction.sql
+	mysql (billy)> source %BILLY_DIR%/sql/billy_config.sql;
+	mysql (billy)> source %BILLY_DIR%/sql/billy_masspayment_order.sql
+	mysql (billy)> source %BILLY_DIR%/sql/billy_transaction.sql
 
 Создаём хранимые процедуры
 
-mysql (billy)> source %BILLY_DIR%/sql/billy_procedures.sql
+	mysql (billy)> source %BILLY_DIR%/sql/billy_procedures.sql
 
 
 ## Описание принципов работы
