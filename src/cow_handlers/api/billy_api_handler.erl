@@ -219,8 +219,6 @@ create_payment(Req0) ->
 		    BillySignParams = #{bill_id => BillId, amount => Amount, ccy => CcyAlpha, merchant_secret_key => MerchantSecretKey},
 		    CountedSignature = billy_commons:get_billy_signature(BillySignParams),
 
-		    io:format("DEBUG>>> billy_api_handler:create_payment  Signs=~p:~p~n", [QuerySignature, CountedSignature]),
-
 		    if
 			%% Сигнатуры сходятся
 			QuerySignature == CountedSignature ->
@@ -279,8 +277,6 @@ create_payment(Req0) ->
 			      params => TrParamsStr
 			     },
 			    
-			    io:format("DEBUG>>> billy_api_handler:create_payment  TrCreateMap=~p~n", [TrCreateMap]),
-
 			    case billy_transaction:create(TrCreateMap) of
 				{ok, BillyTrId} ->
 

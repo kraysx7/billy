@@ -17,7 +17,7 @@ process_transaction(#{transaction_id := TrId, process_result := <<"success">>}) 
 
 	    LocalTime = calendar:local_time(),
 	    
-	    %% Обновить статус транзакции в базе
+	    %% Обновить статус транзакции и код результата обработки в базе
 	    {ok, 1} = billy_transaction:update(#{transaction_id => TrId, process_result_code => ?TR_PROCESS_RESULT_SUCCESS, status => ?TR_STATUS_PROCESSED}),
 	    
 	    %% Обновить текущий этап ipn и дату начала в бд

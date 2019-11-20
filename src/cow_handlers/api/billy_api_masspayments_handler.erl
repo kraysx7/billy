@@ -89,8 +89,6 @@ check_opportunity(Req0) ->
 
     %% Проверяем полученые данные
     PostData = [
-		{merchant_bill_id, proplists:get_value(<<"merchant_bill_id">>, ReqParamsKV)},
-
 		{amount, proplists:get_value(<<"amount">>, ReqParamsKV)},
 		{ccy, ReqCcy},
 		{method, proplists:get_value(<<"method">>, ReqParamsKV)},
@@ -99,7 +97,7 @@ check_opportunity(Req0) ->
 		{desc, proplists:get_value(<<"desc">>, ReqParamsKV)},
 
 		{merchant_id, proplists:get_value(<<"merchant_id">>, ReqParamsKV)},
-		{public_key, proplists:get_value(<<"public_key">>, ReqParamsKV)},
+		{merchant_bill_id, proplists:get_value(<<"merchant_bill_id">>, ReqParamsKV)},
 		{signature, proplists:get_value(<<"signature">>, ReqParamsKV)}
 	       ],
     
@@ -114,9 +112,6 @@ check_opportunity(Req0) ->
 
 	{ok, NormPostData} ->
 
-	    %% io:format("DEBUG>>> billy_masspayment_handler:create_transaction  NormPostData=~p~n", [NormPostData]),
-
-	    MerchantBillId = proplists:get_value(merchant_bill_id, NormPostData),
 	    Amount = proplists:get_value(amount, NormPostData),
 
 	    %% Получить код валюты на основе 3х буквенного кода (iso4107)
@@ -125,78 +120,66 @@ check_opportunity(Req0) ->
 
 	    Method = list_to_binary(proplists:get_value(method, NormPostData)),
 	    MethodConfigGroup = proplists:get_value(method_config_group, NormPostData),
-
 	    Address = list_to_binary(proplists:get_value(address, NormPostData)),
-
 	    Desc = proplists:get_value(desc, NormPostData),
 
 	    MerchantId = proplists:get_value(merchant_id, NormPostData),
-	    PublicKey = list_to_binary(proplists:get_value(public_key, NormPostData)),
-	    Signature = proplists:get_value(signature, NormPostData),
+	    MerchantBillId = proplists:get_value(merchant_bill_id, NormPostData),
 
-	    case billy_cbserver:get_user(#{user_id => MerchantId, res_type => json}) of
+	    QuerySignature = proplists:get_value(signature, NormPostData),
+
+	    %% Получаем описание мерчанта
+	    case billy_merchant:get(#{merchant_id => MerchantId}) of
 		{ok, [MerchantUserProplist]} ->
 
-		    MerchantName = proplists:get_value(<<"name">>, MerchantUserProplist),
+		    %% Загружаем конфиг мерчанта
+		    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
 
-		    %% Проверить публичный ключ
-		    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-		    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-		    MerchantPublicKey = maps:get(<<"public_key">>, MerchantParams),
-		    case MerchantPublicKey of
-			PublicKey ->
-			    %% Получаем секретный ключ мерчанта
-			    MerchantSecretKey = maps:get(<<"secret_key">>, MerchantParams),
-			    
-			    %% Формируем сигнатуру из параметров
-			    BillySignParams = #{bill_id => MerchantBillId, amount => Amount, ccy => Ccy, merchant_secret_key => MerchantSecretKey},
-			    QuerySignVal = billy_commons:get_billy_signature(BillySignParams),
+		    %% Получаем секретный ключ мерчанта
+		    {ok, [{_, MerchantSecretKey}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "secret_key"}),
 
-			    %% io:format("DEBUG>>> billy_masspayment_handler:create_transaction  Signs=~p:~p~n", [Signature, QuerySignVal]),
+		    %% Считаем сигнатуру из параметров
+		    BillySignParams = #{bill_id => MerchantBillId, amount => Amount, ccy => Ccy, merchant_secret_key => MerchantSecretKey},
+		    CountedSignature = billy_commons:get_billy_signature(BillySignParams),
 
-			    %% Проверяем сигнатуру по закрытому ключу
-			    case QuerySignVal of
-				Signature ->
-				    
-				    %% Вызвать ф-ю проверки возможности отправки у соотв. системы
+		    if
+			%% Сигнатуры сходятся
+			QuerySignature == CountedSignature ->
 
-				    %% Получить модуль-обработчик в зависимости от метода
-				    ProcessModule = case Method of
-							<<"qiwi">> -> billy_mp_qiwi_handler;
-							<<"steam">> -> billy_mp_qiwi_handler;
-							<<"payeer">> -> billy_mp_payeer_handler;
-							<<"btc">> -> billy_mp_btc_handler
-						    end,
-				    
-				    case ProcessModule:check_opportunity(#{amount => Amount, ccy_alpha => Ccy, address => Address, config_group_id => MethodConfigGroup}) of
-					%% Отправка возможна
-					ok ->
-					    Responce = {[ {status, ok} ]},
-					    Body = jiffy:encode(Responce),
-					    {ok, Body};
+			    %% Вызвать ф-ю проверки возможности отправки у соотв. системы
 
-					%% Не хватает средств
-					{error, low_balance} ->
-					    Responce = {[ {status, error}, {error_code, 8} ]},
-					    Body = jiffy:encode(Responce),
-					    {ok, Body};
+			    %% Получить модуль-обработчик в зависимости от метода
+			    ProcessModule = case Method of
+						<<"qiwi">> -> billy_mp_qiwi_handler;
+						<<"steam">> -> billy_mp_qiwi_handler;
+						<<"payeer">> -> billy_mp_payeer_handler;
+						<<"btc">> -> billy_mp_btc_handler
+					    end,
 
-					%% Неправильный адрес
-					{error, incorrect_address} ->
-					    Responce = {[ {status, error}, {error_code, 15} ]},
-					    Body = jiffy:encode(Responce),
-					    {ok, Body}
-				    end;
-				
-				QuerySignVal ->
-				    %% Сигнатура неверна
-				    Responce = {[ {status, error}, {error_code, 3} ]},
+			    case ProcessModule:check_opportunity(#{amount => Amount, ccy_alpha => Ccy, address => Address, config_group_id => MethodConfigGroup}) of
+				%% Отправка возможна
+				ok ->
+				    Responce = {[ {status, ok} ]},
+				    Body = jiffy:encode(Responce),
+				    {ok, Body};
+
+				%% Не хватает средств
+				{error, low_balance} ->
+				    Responce = {[ {status, error}, {error_code, 8} ]},
+				    Body = jiffy:encode(Responce),
+				    {ok, Body};
+
+				%% Неправильный адрес
+				{error, incorrect_address} ->
+				    Responce = {[ {status, error}, {error_code, 15} ]},
 				    Body = jiffy:encode(Responce),
 				    {ok, Body}
 			    end;
-			_ ->
-			    %% Неверный публичный ключ
-			    Responce = {[ {status, error}, {error_code, 2} ]},
+
+			%% else (Сигнатура неверна)
+			true ->
+			    %% Сигнатура неверна
+			    Responce = {[ {status, error}, {error_code, 3} ]},
 			    Body = jiffy:encode(Responce),
 			    {ok, Body}
 		    end
@@ -214,8 +197,6 @@ create_transaction(Req0) ->
 
     %% Проверяем полученые данные
     PostData = [
-		{merchant_bill_id, proplists:get_value(<<"merchant_bill_id">>, ReqParamsKV)},
-
 		{amount, proplists:get_value(<<"amount">>, ReqParamsKV)},
 		{ccy, ReqCcy},
 		{method, proplists:get_value(<<"method">>, ReqParamsKV)},
@@ -224,7 +205,7 @@ create_transaction(Req0) ->
 		{desc, proplists:get_value(<<"desc">>, ReqParamsKV)},
 
 		{merchant_id, proplists:get_value(<<"merchant_id">>, ReqParamsKV)},
-		{public_key, proplists:get_value(<<"public_key">>, ReqParamsKV)},
+		{merchant_bill_id, proplists:get_value(<<"merchant_bill_id">>, ReqParamsKV)},
 		{signature, proplists:get_value(<<"signature">>, ReqParamsKV)}
 	       ],
     
@@ -239,9 +220,6 @@ create_transaction(Req0) ->
 
 	{ok, NormPostData} ->
 
-	    %% io:format("DEBUG>>> billy_masspayment_handler:create_transaction  NormPostData=~p~n", [NormPostData]),
-
-	    MerchantBillId = proplists:get_value(merchant_bill_id, NormPostData),
 	    Amount = proplists:get_value(amount, NormPostData),
 
 	    %% Получить код валюты на основе 3х буквенного кода (iso4107)
@@ -250,62 +228,46 @@ create_transaction(Req0) ->
 
 	    Method = list_to_binary(proplists:get_value(method, NormPostData)),
 	    MethodConfigGroup = proplists:get_value(method_config_group, NormPostData),
-
 	    Address = list_to_binary(proplists:get_value(address, NormPostData)),
-
 	    Desc = proplists:get_value(desc, NormPostData),
 
 	    MerchantId = proplists:get_value(merchant_id, NormPostData),
-	    PublicKey = list_to_binary(proplists:get_value(public_key, NormPostData)),
-	    Signature = proplists:get_value(signature, NormPostData),
+	    MerchantBillId = proplists:get_value(merchant_bill_id, NormPostData),
 
-	    case billy_cbserver:get_user(#{user_id => MerchantId, res_type => json}) of
+	    QuerySignature = proplists:get_value(signature, NormPostData),
+
+	    %% Получаем описание мерчанта
+	    case billy_merchant:get(#{merchant_id => MerchantId}) of
 		{ok, [MerchantUserProplist]} ->
 
-		    MerchantName = proplists:get_value(<<"name">>, MerchantUserProplist),
+		    %% Загружаем конфиг мерчанта
+		    {ok, MerchantConfig} = billy_config:get(#{merchant_id => MerchantId}),
 
-		    %% TODO : Это говно надо переделать на RSA
+		    %% Получаем секретный ключ мерчанта
+		    {ok, [{_, MerchantSecretKey}]} = billy_config:get(#{merchant_config => MerchantConfig, key => "secret_key"}),
 
-		    %% Проверить публичный ключ
-		    MerchantParamsStr = proplists:get_value(<<"params">>, MerchantUserProplist),
-		    MerchantParams = jiffy:decode(MerchantParamsStr, [return_maps]),
-		    MerchantPublicKey = maps:get(<<"public_key">>, MerchantParams),
-		    case MerchantPublicKey of
-			PublicKey ->
-			    %% Получаем секретный ключ мерчанта
-			    MerchantSecretKey = maps:get(<<"secret_key">>, MerchantParams),
-			    
-			    %% Формируем сигнатуру из параметров
-			    BillySignParams = #{bill_id => MerchantBillId, amount => Amount, ccy => Ccy, merchant_secret_key => MerchantSecretKey},
-			    QuerySignVal = billy_commons:get_billy_signature(BillySignParams),
+		    %% Считаем сигнатуру из параметров
+		    BillySignParams = #{bill_id => MerchantBillId, amount => Amount, ccy => Ccy, merchant_secret_key => MerchantSecretKey},
+		    CountedSignature = billy_commons:get_billy_signature(BillySignParams),
 
-			    %% io:format("DEBUG>>> billy_masspayment_handler:create_transaction  Signs=~p:~p~n", [Signature, QuerySignVal]),
+		    if
+			%% Сигнатуры сходятся
+			QuerySignature == CountedSignature ->
+			    %% Подсчитать хэши метода и адреса отправки
+			    <<MethodHash:64, _/binary>> = crypto:hash(sha, Method),
+			    <<AddressHash:64, _/binary>> = crypto:hash(sha, Address),
 
-			    %% Проверяем сигнатуру по закрытому ключу
-			    case QuerySignVal of
-				Signature ->
-				    
-				    %% Подсчитать хэши метода и адреса отправки
-				    <<MethodHash:64, _/binary>> = crypto:hash(sha, Method),
-				    <<AddressHash:64, _/binary>> = crypto:hash(sha, Address),
-				    
-				    %% Создаём заказ на отправку средств
-				    CreateOrderParams = [MerchantId, MerchantBillId, Amount, Ccy, CcyNumber, Method, MethodHash, Address, AddressHash, MethodConfigGroup, calendar:local_time(), 0],
-				    case billy_mysql:exec_prepared_stmt(#{stmt => create_masspayment_order_stmt, params => CreateOrderParams}) of
-					{ok, OrderId} ->					    
-				    	    Responce = {[ {status, ok}, {order_id, OrderId} ]},
-				    	    Body = jiffy:encode(Responce),
-				    	    {ok, Body}
-				    end;
-				QuerySignVal ->
-				    %% Сигнатура неверна
-				    Responce = {[ {status, error}, {error_code, 3} ]},
+			    %% Создаём заказ на отправку средств
+			    CreateOrderParams = [MerchantId, MerchantBillId, Amount, Ccy, CcyNumber, Method, MethodHash, Address, AddressHash, MethodConfigGroup, calendar:local_time(), 0],
+			    case billy_mysql:exec_prepared_stmt(#{stmt => create_masspayment_order_stmt, params => CreateOrderParams}) of
+				{ok, OrderId} ->					    
+				    Responce = {[ {status, ok}, {order_id, OrderId} ]},
 				    Body = jiffy:encode(Responce),
 				    {ok, Body}
 			    end;
-			_ ->
-			    %% Неверный публичный ключ
-			    Responce = {[ {status, error}, {error_code, 2} ]},
+			true -> 
+			    %% Сигнатура неверна
+			    Responce = {[ {status, error}, {error_code, 3} ]},
 			    Body = jiffy:encode(Responce),
 			    {ok, Body}
 		    end
@@ -346,8 +308,6 @@ check_post_data(get_balance, PostData) ->
 
 
 check_post_data(check_opportunity, PostData) ->
-    SMerchantBillId = proplists:get_value(merchant_bill_id, PostData),
-
     SAmount = proplists:get_value(amount, PostData),
     SCcy = proplists:get_value(ccy, PostData),
     SMethod = proplists:get_value(method, PostData),
@@ -356,12 +316,10 @@ check_post_data(check_opportunity, PostData) ->
     SDesc = proplists:get_value(desc, PostData),
 
     SMerchantId = proplists:get_value(merchant_id, PostData),
-    SPublicKey = proplists:get_value(public_key, PostData),
+    SMerchantBillId = proplists:get_value(merchant_bill_id, PostData),
     SSignature = proplists:get_value(signature, PostData),
     
     CheckResult = [
-		   {merchant_bill_id, billy_query_helper:check_integer(SMerchantBillId)},
-
 		   {amount, billy_query_helper:check_integer(SAmount)},
 		   {ccy, billy_query_helper:check_string(SCcy, 3)},
 		   {method, billy_query_helper:check_string(SMethod, 20)},
@@ -370,7 +328,7 @@ check_post_data(check_opportunity, PostData) ->
 		   {desc, billy_query_helper:check_string(SDesc, 128)},
 
 		   {merchant_id, billy_query_helper:check_integer(SMerchantId)},
-		   {public_key, billy_query_helper:check_string(SPublicKey, 64)},
+		   {merchant_bill_id, billy_query_helper:check_integer(SMerchantBillId)},
 		   {signature, billy_query_helper:check_string(SSignature, 128)}
 		  ],
 
@@ -382,8 +340,6 @@ check_post_data(check_opportunity, PostData) ->
     end;
 
 check_post_data(create_transaction, PostData) ->
-    SMerchantBillId = proplists:get_value(merchant_bill_id, PostData),
-
     SAmount = proplists:get_value(amount, PostData),
     SCcy = proplists:get_value(ccy, PostData),
     SMethod = proplists:get_value(method, PostData),
@@ -392,12 +348,10 @@ check_post_data(create_transaction, PostData) ->
     SDesc = proplists:get_value(desc, PostData),
 
     SMerchantId = proplists:get_value(merchant_id, PostData),
-    SPublicKey = proplists:get_value(public_key, PostData),
+    SMerchantBillId = proplists:get_value(merchant_bill_id, PostData),
     SSignature = proplists:get_value(signature, PostData),
     
     CheckResult = [
-		   {merchant_bill_id, billy_query_helper:check_integer(SMerchantBillId)},
-
 		   {amount, billy_query_helper:check_integer(SAmount)},
 		   {ccy, billy_query_helper:check_string(SCcy, 3)},
 		   {method, billy_query_helper:check_string(SMethod, 20)},
@@ -406,7 +360,7 @@ check_post_data(create_transaction, PostData) ->
 		   {desc, billy_query_helper:check_string(SDesc, 128)},
 
 		   {merchant_id, billy_query_helper:check_integer(SMerchantId)},
-		   {public_key, billy_query_helper:check_string(SPublicKey, 64)},
+		   {merchant_bill_id, billy_query_helper:check_integer(SMerchantBillId)},
 		   {signature, billy_query_helper:check_string(SSignature, 128)}
 		  ],
 

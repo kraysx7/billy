@@ -180,7 +180,7 @@ handle_cast({notify, #{transaction_id := TrId}} = Command, State) ->
 		%% Костыль-заглушка для отладки. потом убрать
 		Resp ->
 
-		    error_logger:info_msg("DEBUG>>> billy_ipn_worker(~p):handle_cast HTTP ERROR RESPONSE: ~p~n", [self(), Resp]),
+		    lager:error("ERROR IPN RESPONSE: ~p~n", [Resp]),
 		    
 		    ok;
 		%% Такого домена не существует (received an NXDOMAIN error from a DNS)

@@ -23,6 +23,8 @@
 
 {"/payment/paykassa/checkout",                   [{controller, "paykassa/checkout.php"}] }.
 
+{"/payment/webmoney/checkout",                   [{controller, "webmoney/checkout.php"}] }.
+
 %% {"/testphp",                                  [{controller, "test.php"}] }.
 %% {"/ephp/manager/api/reload_routes",           [{controller, "manager/api/reload_routes.php"}] }.
 %% {"/ephp/manager/api/get_transaction",         [{controller, "manager/api/get_transaction.php"}] }.

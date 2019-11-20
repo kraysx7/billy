@@ -2,7 +2,7 @@
 
 -export([get_balance/1, check_opportunity/1, process_payment/1]).
 
-
+-include("../include/billy_transaction.hrl").
 
 get_balance(#{ccy_alpha := CcyAlpha, config_group_id := ConfigGroupId}) ->
     MassPaymentsConfig = billy_config:get(masspayments_config),
@@ -21,8 +21,6 @@ get_balance(#{ccy_alpha := CcyAlpha, config_group_id := ConfigGroupId}) ->
 	    QiwiApiPersonId = list_to_binary(maps:get(qiwi_api_personid, Config)),
 	    FBalance = list_to_binary(float_to_list(Balance / 100, [{decimals, 2}])),
 
-	    %% error_logger:info_msg("GET BALANCE QIWI ~ts = ~ts ~ts~n", [QiwiApiPersonId, FBalance, CcyAlpha]),
-	    
 	    BalanceInfoMap = #{balance => Balance, system_wallet => QiwiApiPersonId},
 
 	    {ok, BalanceInfoMap};
@@ -47,7 +45,7 @@ check_opportunity(#{amount := Amount, ccy_alpha := CcyAlpha, address := Address,
 				end, QiwiConfig),
 
     FAmount = list_to_binary(float_to_list(Amount / 100, [{decimals, 2}])),
-    error_logger:info_msg("CHECK OPPORTUNITY QIWI need_amount = ~ts ~ts~n", [FAmount, CcyAlpha]),
+    lager:info("CHECK OPPORTUNITY QIWI need_amount = ~ts ~ts~n", [FAmount, CcyAlpha]),
 
     %% проверить сумму денег на qiwi кошельке
     case check_qiwi_account(#{config => Config, need_amount => Amount, ccy_alpha => CcyAlpha}) of
@@ -85,8 +83,8 @@ process_payment_(#{method := Method, provider_id := ProviderId, merchant_id := M
 				end, QiwiConfig),
     
     %% Получить мерчанта, связаного с транзакцией
-    {ok, [MerchData | _]} = billy_cbserver:get_user(#{user_id => MerchantId, res_type => json}),
-    MerchName = proplists:get_value(<<"name">>, MerchData),
+    {ok, [MerchantUserProplist]} = billy_merchant:get(#{merchant_id => MerchantId}),
+    MerchName = proplists:get_value(<<"name">>, MerchantUserProplist),
 
     %% проверить сумму денег на qiwi кошельке
     case check_qiwi_account(#{config => Config, need_amount => Amount, ccy_alpha => CcyAlpha}) of
@@ -95,15 +93,15 @@ process_payment_(#{method := Method, provider_id := ProviderId, merchant_id := M
 	    
 	    %% Создать транзакцию перевода денег
 	    CreateTrParams = #{merchant_id => MerchantId, mp_order_id => MpOrderId, bill_id => BillId, cost => Amount, ccy_alpha => CcyAlpha, ccy_number => CcyNumber},
-	    {ok, TransactionId} = billy_mp_commons:create_masspayment_transaction(CreateTrParams),
+	    {ok, TrId} = billy_mp_commons:create_masspayment_transaction(CreateTrParams),
 	    
 	    %% Формируем авторизационный заголовок
 	    AuthorizationHeaderData = io_lib:format("Bearer ~ts", [QiwiOauthToken]),
 	    FTrCostSumm = list_to_binary(float_to_list(Amount / 100, [{decimals,2}])),
-	    FTransactionId = list_to_binary(lists:flatten(io_lib:format("~p", [TransactionId]))),
+	    FTrId = list_to_binary(lists:flatten(io_lib:format("~p", [TrId]))),
 	    
 	    DataMap = #{
-	      <<"id">> => FTransactionId, 
+	      <<"id">> => FTrId, 
 	      <<"sum">> => #{<<"amount">> => FTrCostSumm, <<"currency">> => <<"643">>},
 	      <<"paymentMethod">> => #{<<"type">> => <<"Account">>, <<"accountId">> => <<"643">>},
 	      <<"fields">> => #{<<"account">> => Address}
@@ -126,30 +124,47 @@ process_payment_(#{method := Method, provider_id := ProviderId, merchant_id := M
 
 			       {ok, RespBody} = hackney:body(ClientRef),
 	    		       DecodedRespBody = jiffy:decode(RespBody, [return_maps]),
-			       
 
 			       AddressFrom = maps:get(qiwi_api_personid, Config),
-	    		       error_logger:info_msg("[200] FINISH MASSPAYMENT >>> merchant: ~ts, system: qiwi->~p | ~ts ~ts sended from ~ts to ~ts ,  (tr_id: ~p)~n", [MerchName, Method, FTrCostSumm, CcyAlpha, AddressFrom, Address, TransactionId]),
-			       
-			       %% Закрыть транзакцию (УСПЕШНО)
-	    		       billy_cbserver:close_transaction(TransactionId, 0, 1),
+	    		       lager:info("[200] FINISH MASSPAYMENT >>> merchant: ~ts, system: qiwi->~p | ~ts ~ts sended from ~ts to ~ts , (tr_id: ~p)~n", [MerchName, Method, FTrCostSumm, CcyAlpha, AddressFrom, Address, TrId]),
 
-			       %% Закрыть заказ (УСПЕШНО)
+			       %% Обновить текущий этап ipn в кэше
+			       ok = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, mode => cache}),
+			       
+			       LocalTime = calendar:local_time(),
+			       
+			       %% Обновить статус транзакции и код результата обработки в базе
+			       {ok, 1} = billy_transaction:update(#{transaction_id => TrId, process_result_code => ?TR_PROCESS_RESULT_SUCCESS, status => ?TR_STATUS_PROCESSED}),
+			       
+			       %% Обновить текущий этап ipn и дату начала в бд
+			       {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, ipn_process_date => LocalTime}),
+			       
+
+			       %% Закрыть заказ на вывод (УСПЕШНО)
 			       CloseOrderParams = [calendar:local_time(), 1, MpOrderId],
 			       billy_mysql:exec_prepared_stmt(#{stmt => close_masspayment_order_stmt, params => CloseOrderParams}),
 			       			       
-	    		       {ok, TransactionId};
+	    		       {ok, TrId};
 	    		   {ok, 400, _RespHeaders, ClientRef} ->
 
 			       {ok, RespBody} = hackney:body(ClientRef),
 	    		       DecodedRespBody = jiffy:decode(RespBody, [return_maps]),
 
 	    		       ErrorCode = maps:get(<<"code">>, DecodedRespBody, <<"">>),
+			       AddressFrom = maps:get(qiwi_api_personid, Config),
+	    		       lager:error("[400] ERROR MASSPAYMENT (code=~ts) >>> merchant: ~ts, system: qiwi->~p | ~ts ~ts not sended from ~ts to ~ts , (tr_id: ~p)~n", [ErrorCode, MerchName, Method, FTrCostSumm, CcyAlpha, AddressFrom, Address, TrId]),
 
-	    		       error_logger:info_msg("DEBUG>>> billy_mp_qiwi_handler:process_payment HTTP:400 ERROR CODE:~ts | system: ~p, tr_id: ~p,  address: ~ts, cost: ~ts~n", [ErrorCode, qiwi, TransactionId, Address, FTrCostSumm]),
-
-	    		       %% Закрыть транзакцию (ОШИБКА)
-	    		       billy_cbserver:close_transaction(TransactionId, 0, 2),
+			       %% Обновить текущий этап ipn в кэше
+			       ok = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, mode => cache}),
+			       
+			       LocalTime = calendar:local_time(),
+			       
+			       %% Обновить статус транзакции и код результата обработки в базе
+			       {ok, 1} = billy_transaction:update(#{transaction_id => TrId, process_result_code => ?TR_PROCESS_RESULT_FAIL, status => ?TR_STATUS_PROCESSED}),
+			       
+			       %% Обновить текущий этап ipn и дату начала в бд
+			       {ok, 1} = billy_transaction:update(#{transaction_id => TrId, ipn_process_stage => ?IPN_PROCESS_STAGE_HOT, ipn_process_date => LocalTime}),
+			       
 
 			       %% Закрыть заказ (ОШИБКА)
 			       CloseOrderParams = [calendar:local_time(), 1, MpOrderId],
@@ -165,7 +180,7 @@ process_payment_(#{method := Method, provider_id := ProviderId, merchant_id := M
 	    			   _ -> {error, unknown}
 	    		       end;
 	    		   Resp -> 
-	    		       error_logger:info_msg("DEBUG>>> billy_mp_qiwi_handler:process_payment HTTP ERROR RESPONSE: ~p~n", [Resp]),
+	    		       lager:error("ERROR MASSPAYMENT RESPONSE: ~p~n", [Resp]),
 	    		       {error, unknown}
 	    	       end,
 	    QueryRes;
@@ -202,7 +217,7 @@ get_qiwi_balance(#{config := Config, ccy_alpha := CcyAlpha}) ->
 
 		    QiwiApiPersonId = maps:get(qiwi_api_personid, Config),
 
-		    error_logger:info_msg("GET QIWI BALANCE : ~ts balance = ~p ~ts ~n", [QiwiApiPersonId, BalanceAmount, CcyAlpha]),
+		    lager:info("GET QIWI BALANCE : ~ts balance = ~p ~ts ~n", [QiwiApiPersonId, BalanceAmount, CcyAlpha]),
 
 		    {ok, BalanceAmountCents}
 	    end;
@@ -233,7 +248,7 @@ check_qiwi_account(#{config := Config, need_amount := NeedAmount, ccy_alpha := C
 		    QiwiApiPersonId = maps:get(qiwi_api_personid, Config),
 
 		    FNeedAmount = list_to_binary(float_to_list(NeedAmount / 100, [{decimals,2}])),
-		    error_logger:info_msg("CHECK QIWI BALANCE : ~ts balance = ~p ~ts ; need_amount = ~ts ~ts~n", [QiwiApiPersonId, BalanceAmount, CcyAlpha, FNeedAmount, CcyAlpha]),
+		    lager:info("CHECK QIWI BALANCE : ~ts balance = ~p ~ts ; need_amount = ~ts ~ts~n", [QiwiApiPersonId, BalanceAmount, CcyAlpha, FNeedAmount, CcyAlpha]),
 
 		    case BalanceAmountCents - NeedAmount of
 			D when D < 0 -> {error, low_balance};
@@ -274,7 +289,7 @@ get_qiwi_account_info(#{config := Config}) ->
 		       {ok, DecodedRespBody};
 
 		   Resp -> 
-		       error_logger:info_msg("DEBUG>>> billy_mp_qiwi_handler:get_qiwi_accounts_info hackney Resp: ~p~n", [Resp]),
+		       lager:error("ERROR GET QIWI ACCOUNT INFO: ~p~n", [Resp]),
 		       {error, unknown}
 	       end,
     QueryRes.

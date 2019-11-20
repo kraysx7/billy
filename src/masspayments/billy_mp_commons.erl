@@ -11,22 +11,18 @@ create_masspayment_transaction(#{merchant_id := MerchantId, mp_order_id := MpOrd
 
     ParamsStr = jiffy:encode(ParamsMap),
 
-    case billy_cbserver:create_transaction(#{
-					      type => 40,
-					      params => ParamsStr,
-					      user_id => MerchantId,
-					      
-					      currency_alpha => CcyAlpha,
-					      currency_number => CcyNumber,
-					      
-					      cost => Cost,
-					      new_balance => 0,
-					      status => 0,
-					      create_date => calendar:local_time(),
-					      close_date => null
-					    }) of
-	{ok, TransactionId} -> {ok, TransactionId};
+    TrCreateMap = #{
+      merchant_id => MerchantId,
+      type => 40,
+      amount => Cost,
+      ccy_alpha => CcyAlpha,
+      ccy_number => CcyNumber,
+      params => ParamsStr
+     },
+    
+    case billy_transaction:create(TrCreateMap) of
+	{ok, BillyTrId} -> {ok, BillyTrId};
 	Res ->
-	    error_logger:info_msg("DEBUG>>> billy_mp_commons:create_masspayment_transaction ERROR Res: ~p~n", [Res]), 
+	    lager:error("create masspayment transaction error: ~p", [Res]),
 	    {error, unknown}
     end.
