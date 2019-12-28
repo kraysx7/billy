@@ -58,7 +58,7 @@ BILLY реализует основной функционал платёжно�
 
 Создаём базу
 
-	mysql > CREATE DATABASE `billy`;
+	mysql > CREATE DATABASE `billy` CHARACTER SET utf8 COLLATE utf8_general_ci;
 	mysql > USE `billy`;
 
 Создаём таблицы
