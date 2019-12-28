@@ -19,8 +19,7 @@
   );
   $query_options = array();
 
-  $comment0 = format_str("Order ~p", array($billy_transaction_id));
-  // $comment = characters_to_binary($comment0, "utf8", "unicode");
+  $comment0 = "Order №".$billy_transaction_id;
 
   $cur_posix_time = time();
   $exp_posix_time = $cur_posix_time + 172800; // add 2 days

@@ -355,6 +355,7 @@ json_decode(_Context, _Line,  {_, JsonStr}) ->
 json_encode(_Context, _Line,  {_, PhpArray}) ->
     ErlJson = ephp_array_to_erljson(#{ephp_array => PhpArray}),
     EncodedPhpArray = jiffy:encode(ErlJson),
+    %% io:format("DEBUG>>> billy_ephp_lib:json_encode EncodedPhpArray=~p~n", [EncodedPhpArray]),
     EncodedPhpArray.
 
 

@@ -816,9 +816,6 @@ get_payment_link(#{system := System, transaction_id := BillyTrId}) ->
 		{ok, _Return} ->
 		    Result = ephp_context:get_output(Ctx),
 		    ResultBin = unicode:characters_to_binary(Result, utf8),
-
-		    io:format("DEBUG>>> api_handler:get_payment_link ResultBin=>~ts<",[ResultBin]),
-
 		    ResultMap = jiffy:decode(ResultBin, [return_maps]),
 		    case maps:get(<<"status">>, ResultMap) of
 			<<"ok">> ->
