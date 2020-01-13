@@ -24,8 +24,8 @@
   $cur_posix_time = time();
   $exp_posix_time = $cur_posix_time + 172800; // add 2 days
   date_default_timezone_set("Europe/Moscow");
-  $exp_date1 = date("Y-n-d", $exp_posix_time);
-  $exp_date2 = date("h:m:s.000", $exp_posix_time);
+  $exp_date1 = date("Y-m-d", $exp_posix_time);
+  $exp_date2 = date("H:i:s.000", $exp_posix_time);
   $exp_date = $exp_date1."T".$exp_date2."Z";
 
   $query_body_arr = array(
@@ -37,7 +37,8 @@
     "expirationDateTime" => $exp_date,
     "customer" => array(
       "phone" => $transaction["params"]["system_params"]["phone"]
-    )
+    ),
+    "customFields" => array("themeCode" => "Ylia-T4oQ6eVxNR")
   );
 
   $query_body_str = json_encode($query_body_arr);
