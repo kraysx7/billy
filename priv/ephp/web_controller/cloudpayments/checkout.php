@@ -8,17 +8,17 @@
 
   $tr_id = (int)$_GET['tr_id'];
 
-  if(count($_GET) == 0 || check_billy_signature($tr_id, $_GET['signature']) == false) {
-    echo "Ошибка подписи";
-    exit;
-  }
+  // if(count($_GET) == 0 || check_billy_signature($tr_id, $_GET['signature']) == false) {
+  //  echo "Ошибка подписи";
+  //  exit;
+  // }
 
   //Получаем транзакцию
-  $transaction = get_transaction($tr_id);
+  // $transaction = get_transaction($tr_id);
 
   // Получаем настройки мерчанта для данной платёжной системы
-  $merchant_id = $transaction["merchant_id"];
-  $paysystem_config = get_paysystem_config($merchant_id, $transaction["params"]["system"]);
+  // $merchant_id = $transaction["merchant_id"];
+  // $paysystem_config = get_paysystem_config($merchant_id, $transaction["params"]["system"]);
 
 ?>
 

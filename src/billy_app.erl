@@ -18,19 +18,19 @@ start(_Type, _Args) ->
     mnesia_init_tables(),
 
     %% Создаём пул процессов для вызова платёжных оповещений (ipn)
-    wpool:start_sup_pool(billy_ipn_wpool, [{workers, 1}, {worker_type, gen_server}, {worker, {billy_ipn_worker, []}}] ),
+    %% wpool:start_sup_pool(billy_ipn_wpool, [{workers, 1}, {worker_type, gen_server}, {worker, {billy_ipn_worker, []}}] ),
 
-    %% Создаём пул соединений mysql клиента
-    emysql:add_pool(main_pool, [
-				{size, 2},
-				{user, billy_config:get(mysql_username)}, {password, billy_config:get(mysql_password)},
-				{host, billy_config:get(mysql_host)}, {port, billy_config:get(mysql_port)}, {database, billy_config:get(mysql_database)}, {encoding,utf8}
-			       ]),
+    %% %% Создаём пул соединений mysql клиента
+    %% emysql:add_pool(main_pool, [
+    %% 				{size, 2},
+    %% 				{user, billy_config:get(mysql_username)}, {password, billy_config:get(mysql_password)},
+    %% 				{host, billy_config:get(mysql_host)}, {port, billy_config:get(mysql_port)}, {database, billy_config:get(mysql_database)}, {encoding,utf8}
+    %% 			       ]),
 
-    %% Инициализируем prepared statements 
-    billy_mysql:init_stmt(),
-    billy_merchant_db:init_stmt(),
-    billy_transaction_db:init_stmt(),
+    %% %% Инициализируем prepared statements 
+    %% billy_mysql:init_stmt(),
+    %% billy_merchant_db:init_stmt(),
+    %% billy_transaction_db:init_stmt(),
 
     %% Загружаем и компилируем таблицу роутинга 
     {ok, Routes} = billy_cow_routes:load_routes(),

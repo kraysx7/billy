@@ -1,5 +1,5 @@
 -module(billy_ephp_lib).
--compile([warnings_as_errors]).
+%% -compile([warnings_as_errors]).
 
 -include("ephp.hrl").
 

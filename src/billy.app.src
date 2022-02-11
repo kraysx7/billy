@@ -7,7 +7,7 @@
                     kernel, stdlib, inets, crypto, mnesia, ssl,
 
                     %% stuff apps
-                    lager, erlydtl, worker_pool, emysql, jiffy, iconv, p1_utils, recon, parse_trans,
+                    erlydtl, emysql, iconv, recon, parse_trans,
 
                     %% webserver apps
                     cowboy, ephp,
