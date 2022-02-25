@@ -34,17 +34,14 @@ start() ->
     %% Инициализируем mnesia
     init_mnesia(),
 
-    %% Запускаем lager
-    lager:start(),
-
     %% Запускаем mysql клиент
     {ok, _} = application:ensure_all_started(emysql),
 
-    %% Запускаем worker_pool (inaka)
-    wpool:start(),
+    %% %% Запускаем worker_pool (inaka)
+    %% wpool:start(),
 
-    %% Создаём пул процессов для вызова платёжных оповещений мерчантов
-    wpool:start_sup_pool(billy_ipn_wpool, [{workers, 1}, {worker_type, gen_server}, {worker, {billy_ipn_worker, []}}] ),
+    %% %% Создаём пул процессов для вызова платёжных оповещений мерчантов
+    %% wpool:start_sup_pool(billy_ipn_wpool, [{workers, 1}, {worker_type, gen_server}, {worker, {billy_ipn_worker, []}}] ),
 
     %% Запускаем приложение интерпретатор для php
     ephp:start(),

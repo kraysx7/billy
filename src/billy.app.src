@@ -1,25 +1,26 @@
-{application, billy,
-[
+{application, billy, [
     {description, "Payments gateway"},
-    {vsn, "0.5"},
+    {vsn, "0.1.1"},
+    {modules, [billy_app]},
+    {registered, []},
     {applications, [
-                    %% system apps
-                    kernel, stdlib, inets, crypto, mnesia, ssl,
+        %% Erlang core applications
+        kernel, stdlib, sasl, mnesia,
 
-                    %% stuff apps
-                    erlydtl, emysql, iconv, recon, parse_trans,
+        %% Debuging and logging
+        recon,
 
-                    %% webserver apps
-                    cowboy, ephp,
+        %% Stuff applications
+        emysql,    %% MySQL client
+        jsx,       %% Manipulating JSON library
+        cowboy,    %% Webserver
+        hackney,   %% Webclient
 
-                    %% webclient apps
-                    public_key, hackney
-                    ]},
-    {mod, {billy_app,[]}},
-    {env, []},
-    {links, [
-                {"Github", "https://github.com/kraysx7/billy"}
-            ]},
-    {exclude_files, []},
-    {include_files, []}
+        mimetypes,
+        erlydtl,
+        ephp,
+        iconv
+    ]},
+    {mod, {billy_app, []}},
+    {env, []}
 ]}.

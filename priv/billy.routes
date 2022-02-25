@@ -4,6 +4,12 @@
 
 %% ePHP controllers
 
+{"/payment/onlinekassa/checkout",                [{controller, "onlinekassa/checkout.php"}] }.
+{"/payment/onlinekassa/charge",                  [{controller, "onlinekassa/charge.php"}] }.
+{"/payment/onlinekassa/wait3ds",                 [{controller, "onlinekassa/wait3ds.php"}] }.
+{"/payment/onlinekassa/charge3ds",               [{controller, "onlinekassa/charge3ds.php"}] }.
+{"/payment/onlinekassa/finish",                  [{controller, "onlinekassa/finish.php"}] }.
+
 {"/payment/cloudpayments/checkout",              [{controller, "cloudpayments/checkout.php"}] }.
 {"/payment/cloudpayments/cardCharge",            [{controller, "cloudpayments/checkout_cardcharge.php"}] }.
 {"/payment/cloudpayments/post3ds",               [{controller, "cloudpayments/checkout_post3ds.php"}] }.
